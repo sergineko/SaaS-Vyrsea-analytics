@@ -2,7 +2,7 @@
 
 MVP de monitorización HTTP basado en el alcance gratuito de `Idea C.docx`. Frontend React + TypeScript + Vite + Tailwind, API Hono sobre Workers, D1 con Drizzle, passkeys y Cloudflare Queues. No necesita VPS, Supabase ni un servicio de correo. El documento de producto original y los datos locales no se publican en el repositorio.
 
-Repositorio: [sergineko/SaaS-Vyrsea-analytics](https://github.com/sergineko/SaaS-Vyrsea-analytics). La rama `main` ejecuta validación de tipos, pruebas y compilación mediante GitHub Actions. Este flujo no publica ni necesita secretos de Cloudflare; la conexión de despliegue se configura por separado.
+Repositorio: [sergineko/SaaS-Vyrsea-analytics](https://github.com/sergineko/SaaS-Vyrsea-analytics). La rama `main` ejecuta validación de tipos, pruebas y compilación mediante GitHub Actions. Cloudflare Builds tiene su propia conexión para validar y publicar esa rama; los secretos de despliegue permanecen en Cloudflare, fuera de GitHub y del código.
 
 ## Qué funciona
 
@@ -60,7 +60,9 @@ pnpm run deploy:production
 
 El despliegue compila, comprueba el HTML público, aplica migraciones pendientes y publica Worker + Static Assets. La configuración exige HTTPS, un UUID D1 real y una clave pública de Turnstile. Si falta su secreto, el servidor mantiene el registro desactivado. En esta estación Wrangler utiliza `XDG_CONFIG_HOME=.wrangler/config`; ese directorio está ignorado por Git.
 
-La rama `main` pasa la validación de GitHub Actions. La conexión de despliegue continuo se configura por separado. Crear tu cuenta Business de propietario requiere registrar personalmente la passkey en el dominio definitivo y conceder el rol por UUID desde el [procedimiento de acceso](docs/account-access.md). No se habilita ningún pago.
+La conexión de Cloudflare Builds está configurada con `pnpm run check` como compilación y `pnpm run deploy:production` como despliegue. Utiliza Node 24, pnpm 11.25.0 y caché de dependencias. Las vistas previas de otras ramas están deshabilitadas para evitar desplegar pruebas contra D1 de producción. Comprueba el resultado de cada compilación en Cloudflare; guardar la conexión o pasar GitHub Actions por sí solos no confirman una publicación. Consulta el [flujo y los permisos de despliegue](docs/deployment.md).
+
+Crear tu cuenta Business de propietario requiere registrar personalmente la passkey en el dominio definitivo y conceder el rol por UUID desde el [procedimiento de acceso](docs/account-access.md). No se habilita ningún pago.
 
 ### Capacidad y coste
 
