@@ -83,12 +83,13 @@ auth.post('/login/verify', async c => {
   if (!result.verified) throw new HTTPException(400, { message: 'No se pudo verificar el acceso.' });
   // A late login must not revive an account that already exceeded the inactivity deadline.
   await expireInactiveAccounts(c.env, nowSeconds(), credential.user_id);
-  const session = await newSession(c, credential.user_id);
-  await c.env.DB.batch([
-    c.env.DB.prepare('UPDATE credentials SET counter=? WHERE id=?').bind(result.authenticationInfo.newCounter, credential.id), session.statement,
+  const session = await newSession(c, credential.user_id, credential.id);
+  const writes = await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE credentials SET counter=MAX(counter,?) WHERE id=?').bind(result.authenticationInfo.newCounter, credential.id), session.statement,
     c.env.DB.prepare("UPDATE users SET last_active_at=? WHERE id=? AND account_status='active' AND last_active_at<=?")
       .bind(nowSeconds(), credential.user_id, nowSeconds() - 3600),
   ]);
+  if (writes[1].meta.changes !== 1) throw new HTTPException(400, { message: 'Esta passkey se ha revocado. Utiliza tu nueva clave.' });
   session.commitCookie();
   return c.json({ ok: true });
 });

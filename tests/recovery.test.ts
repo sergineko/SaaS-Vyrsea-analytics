@@ -84,12 +84,14 @@ describe.sequential('Passkey recovery with real WebAuthn signatures and D1',()=>
   it('recovers the existing owner, preserves all entitlements and revokes every old key and session',async()=>{
     const {key,session,user}=await register();await db.prepare("UPDATE users SET account_status='active',is_owner=1,plan_id='business' WHERE id=?").bind(user.id).run();
     const codes=await kit(key,session);const second=cookie(await login(key),'session');
+    const staleLogin=await api('/auth/login/options',{});const staleChallenge=await staleLogin.json() as {challenge:string};const staleResponse=key.login(staleChallenge.challenge);
     const replacement=authenticator();const options=await recoveryOptions(codes[0]);const {challenge}=await options.json() as {challenge:string};
     const result=await api('/auth/recovery/verify',replacement.register(challenge),cookie(options));expect(result.status).toBe(200);
     for(const old of [session,second])expect(await (await api('/me',undefined,old)).json()).toEqual({user:null});
     const recovered=await (await api('/me',undefined,cookie(result,'session'))).json() as {user:AccountUser};
     expect(recovered.user).toMatchObject({id:user.id,username:'recover-user',isOwner:true,planId:'business',accountStatus:'active'});
     expect((await login(key)).status).toBe(400);expect((await login(replacement)).status).toBe(200);
+    expect((await api('/auth/login/verify',staleResponse,cookie(staleLogin))).status).toBe(400);
     expect((await recoveryOptions(codes[0])).status).toBe(400);
     expect((await db.prepare('SELECT COUNT(*) AS n FROM recovery_codes').first())!.n).toBe(7);
     expect((await db.prepare('SELECT COUNT(*) AS n FROM recent_auth').first())!.n).toBe(0);

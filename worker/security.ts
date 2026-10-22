@@ -35,9 +35,13 @@ export async function sessionUser(c: Context<AppEnv>): Promise<User | null> {
   }
   return user ? { ...user, isOwner: Boolean(user.isOwner) } : null;
 }
-export async function newSession(c: Context<AppEnv>, userId: string) {
+export async function newSession(c: Context<AppEnv>, userId: string, credentialId?: string) {
   const token = randomToken();
-  const statement = c.env.DB.prepare('INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)').bind(await digest(token), userId, nowSeconds() + 604800);
+  // Recheck inside the login transaction: recovery may revoke a key while its signature is being verified.
+  const values = [await digest(token), userId, nowSeconds() + 604800];
+  const statement = credentialId
+    ? c.env.DB.prepare('INSERT INTO sessions(token_hash,user_id,expires_at) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM credentials WHERE id=? AND user_id=?)').bind(...values, credentialId, userId)
+    : c.env.DB.prepare('INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)').bind(...values);
   return { statement, commitCookie: () => putCookie(c, 'session', token, 604800) };
 }
 export async function rateLimit(c: Context<AppEnv>, scope: string, limit: number, windowSeconds: number) {
