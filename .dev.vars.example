@@ -1,0 +1,5 @@
+# Copiar a .dev.vars. Solo para desarrollo local.
+APP_ORIGIN=http://localhost:5173
+# En producción ambas claves son obligatorias para registrar cuentas.
+# TURNSTILE_SITE_KEY=
+# TURNSTILE_SECRET_KEY=

@@ -1,0 +1,59 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vyrsea-monitor",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": true,
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": [
+      "/api/*"
+    ]
+  },
+  "vars": {
+    "APP_ORIGIN": "http://localhost:5173",
+    "TURNSTILE_SITE_KEY": "",
+    "PUBLIC_SITE_URL": "https://vyrsea.com"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vyrsea-db",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "CHECK_QUEUE",
+        "queue": "vyrsea-checks"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "vyrsea-checks",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "max_concurrency": 1,
+        "dead_letter_queue": "vyrsea-dead-letters"
+      }
+    ]
+  },
+  "triggers": {
+    "crons": [
+      "* * * * *",
+      "17 3 * * *"
+    ]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1
+  }
+}

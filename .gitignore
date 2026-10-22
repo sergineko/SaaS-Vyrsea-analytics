@@ -1,0 +1,16 @@
+node_modules/
+.pnpm-store/
+dist/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+coverage/
+.test-build/
+*.log
+artifacts/
+# Original product notes and Word's temporary owner file are not application source.
+Idea C.docx
+~$*.docx
+Nuevo Documento de texto.txt
