@@ -3,9 +3,16 @@ import worker from '../worker/index';
 import { cleanup, consume, dispatchPending, recordResult, reserveCheck, schedule } from '../worker/jobs';
 import type { CheckJob, Env } from '../worker/env';
 import type { ProbeResult } from '../worker/probe';
+import { runRetentionJob } from '../worker/retention-job';
 export default {
   ...worker,
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    if (new URL(request.url).pathname === '/__test/retention-run') {
+      const {start,timestamp,withSchedule}=await request.json() as {start:boolean;timestamp:number;withSchedule?:boolean};
+      let queries=0;const instrumented={...env,DB:new Proxy(env.DB,{get(target,property){if(property==='prepare')return (sql:string)=>{queries++;return target.prepare(sql);};const value=Reflect.get(target,property);return typeof value==='function'?value.bind(target):value;}})};
+      try{await Promise.all([runRetentionJob(instrumented,start,timestamp),...(withSchedule?[schedule(instrumented,timestamp)]:[])]);return Response.json({ok:true,queries});}
+      catch{return Response.json({error:'Fixture cleanup interrupted',queries},{status:503});}
+    }
     if (['/__test/cleanup', '/__test/schedule'].includes(new URL(request.url).pathname)) {
       const { timestamp } = await request.json() as { timestamp: number };
       await (new URL(request.url).pathname.endsWith('cleanup') ? cleanup : schedule)(env, timestamp);

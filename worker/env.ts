@@ -7,6 +7,11 @@ export interface Env {
   APP_ORIGIN: string;
   TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
+  CLOUDFLARE_ANALYTICS_TOKEN?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_D1_ID?: string;
+  CLOUDFLARE_QUEUE_ID?: string;
+  CLOUDFLARE_SCRIPT_NAME?: string;
 }
 export type User = import('../shared/accounts').AccountUser;
 export type AppEnv = { Bindings: Env; Variables: { user: User } };

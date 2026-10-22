@@ -6,10 +6,11 @@ import { auth } from './auth';
 import { credentialSecurity } from './credential-security';
 import { api } from './api';
 import type { AppEnv, Env, QueuePayload } from './env';
-import { cleanup, consume, schedule } from './jobs';
+import { consume, schedule } from './jobs';
 import { isLocal, sessionUser } from './security';
 import { BILLING, PLAN_CATALOG } from '../shared/plans';
 import { account, owner } from './accounts';
+import { runRetentionJob } from './retention-job';
 
 const app = new Hono<AppEnv>();
 app.use('/api/*', bodyLimit({ maxSize: 16384, onError: c => c.json({ error: 'Solicitud demasiado grande.' }, 413) }));
@@ -65,7 +66,9 @@ export default {
     const time = new Date(controller.scheduledTime);
     // One Cron binding for the entire MVP; the account's Free limit is shared.
     const daily = time.getUTCHours() === 3 && time.getUTCMinutes() === 17;
-    ctx.waitUntil(controller.cron === '17 3 * * *' ? cleanup(env) : Promise.all([schedule(env), ...(daily ? [cleanup(env)] : [])]));
+    // Reuse the minute trigger; unfinished bounded deletes continue every 15 min.
+    const continuation=(time.getUTCMinutes()+13)%15===0;
+    ctx.waitUntil(controller.cron === '17 3 * * *' ? runRetentionJob(env,true) : Promise.all([schedule(env), ...(daily||continuation ? [runRetentionJob(env,daily)] : [])]));
   },
   async queue(batch: MessageBatch<QueuePayload>, env: Env) {
     for (const message of batch.messages) {

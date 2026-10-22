@@ -84,3 +84,5 @@ Lighthouse 13 no incluye la categoría experimental de navegación agéntica en 
 ## Copias y cambios
 
 Antes de modificar migraciones o desplegar cambios de esquema en una instalación con datos, exporta D1 con las herramientas oficiales. No edites una migración ya aplicada; crea otra numerada. Mantén por separado los secretos y la exportación de datos. El borrado de un monitor elimina su historial sin papelera y la interfaz pide confirmación concreta.
+
+La limpieza guarda su estado y continúa cada 15 minutos si quedan lotes vencidos. Consulta [el procedimiento de retención](historical-retention.md) y [las métricas reales de cuenta y proyecto](infrastructure-metrics.md).

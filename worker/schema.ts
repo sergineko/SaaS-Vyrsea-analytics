@@ -38,3 +38,8 @@ export const maintenanceWindows = sqliteTable('maintenance_windows', {
   startsAt: integer('starts_at').notNull(), endsAt: integer('ends_at').notNull(), reason: text('reason').notNull(),
   createdAt: integer('created_at').notNull(), cancelledAt: integer('cancelled_at'),
 });
+export const maintenanceJobs = sqliteTable('maintenance_jobs', {
+  id:text('id').primaryKey(),runDay:text('run_day').notNull(),startedAt:integer('started_at').notNull(),
+  updatedAt:integer('updated_at').notNull(),completedAt:integer('completed_at'),pending:integer('pending').notNull().default(1),
+  deletedJson:text('deleted_json').notNull().default('{}'),leaseUntil:integer('lease_until').notNull().default(0),leaseToken:text('lease_token'),
+});

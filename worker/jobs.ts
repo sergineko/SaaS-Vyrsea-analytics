@@ -105,8 +105,9 @@ export async function consume(payload: QueuePayload, env: Env) {
   if (!payload || !Array.isArray(payload.jobs) || !payload.jobs.length || payload.jobs.length > JOBS_PER_MESSAGE ||
     payload.jobs.some(job => !job || typeof job.monitorId !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(job.monitorId) || !Number.isSafeInteger(job.slot) || job.slot < 0) ||
     new Set(payload.jobs.map(job => `${job.monitorId}:${job.slot}`)).size !== payload.jobs.length) throw new Error('Invalid queue payload');
-  // Sequential execution keeps simultaneous connections and subrequests bounded.
-  for (const job of payload.jobs) {
+  // Two lanes avoid placing healthy targets behind a slow one. Each lane uses
+  // at most two DNS connections, below the shared six-connection limit.
+  async function run(job: CheckJob) {
     const timestamp=nowSeconds();
     const monitor = await env.DB.prepare(`SELECT url,paused,last_slot,${accountEligible(timestamp)} AS eligible,${slotEligible(job.slot)} AS validSlot,
       EXISTS(SELECT 1 FROM maintenance_windows w WHERE w.monitor_id=monitors.id
@@ -115,31 +116,44 @@ export async function consume(payload: QueuePayload, env: Env) {
       .bind(timestamp,timestamp,job.slot,job.slot,job.monitorId).first<{ url: string; paused: number; last_slot: number; maintenance:number; eligible:number; validSlot:number }>();
     if (!monitor || !monitor.eligible || !monitor.validSlot || monitor.paused || monitor.maintenance || monitor.last_slot >= job.slot) {
       await env.DB.prepare('DELETE FROM check_jobs WHERE id=?').bind(`${job.monitorId}:${job.slot}`).run();
-      continue;
+      return;
     }
     const result = await probe(monitor.url);
     await recordResult(env, job, result);
+  }
+  // Wait for both lanes before retrying; no work remains running after a failure.
+  for(let index=0;index<payload.jobs.length;index+=2){
+    const results=await Promise.allSettled(payload.jobs.slice(index,index+2).map(run));
+    const failed=results.find(result=>result.status==='rejected');
+    if(failed?.status==='rejected')throw failed.reason;
   }
 }
 
 export async function cleanup(env: Env, timestamp = nowSeconds()) {
   await expireInactiveAccounts(env, timestamp);
+  const dayBoundary=Math.floor(timestamp/86400)*86400;
+  const deleted:Record<string,number>={};let pending=false;
   // Retention follows each account; bounded deletes limit work after long outages.
   const historyDays = `CASE WHEN u.plan_id='business' THEN u.history_days_limit ELSE p.history_days END`;
   for (const [table, field, limit] of [['checks','checked_at',3500], ['hourly_stats','hour',1000], ['incidents','resolved_at',500]] as const) {
-    await env.DB.prepare(`DELETE FROM ${table} WHERE rowid IN (${retentionCandidatesSQL(table, field, limit)})`).bind(timestamp).run();
+    const result=await env.DB.prepare(`DELETE FROM ${table} WHERE rowid IN (${retentionCandidatesSQL(table, field, limit)})`).bind(dayBoundary).run();
+    deleted[table]=result.meta.changes;pending ||= result.meta.changes>=limit;
   }
-  await env.DB.prepare(`DELETE FROM notifications WHERE rowid IN (
+  const notifications=await env.DB.prepare(`DELETE FROM notifications WHERE rowid IN (
     SELECT n.rowid FROM notifications n JOIN users u ON u.id=n.user_id JOIN plan_limits p ON p.id=u.plan_id
-    WHERE n.created_at < ? - (${historyDays}) * 86400 LIMIT 500)`).bind(timestamp).run();
-  await env.DB.prepare(`DELETE FROM maintenance_windows WHERE rowid IN (
+    WHERE n.created_at < ? - (${historyDays}) * 86400 LIMIT 500)`).bind(dayBoundary).run();
+  deleted.notifications=notifications.meta.changes;pending ||= notifications.meta.changes>=500;
+  const maintenance=await env.DB.prepare(`DELETE FROM maintenance_windows WHERE rowid IN (
     SELECT w.rowid FROM maintenance_windows w JOIN monitors m ON m.id=w.monitor_id JOIN users u ON u.id=m.user_id JOIN plan_limits p ON p.id=u.plan_id
-    WHERE MIN(w.ends_at,COALESCE(w.cancelled_at,w.ends_at)) < ? - (${historyDays}) * 86400 LIMIT 500)`).bind(timestamp).run();
+    WHERE MIN(w.ends_at,COALESCE(w.cancelled_at,w.ends_at)) < ? - (${historyDays}) * 86400 LIMIT 500)`).bind(dayBoundary).run();
+  deleted.maintenance_windows=maintenance.meta.changes;pending ||= maintenance.meta.changes>=500;
   const statements = [
     ['sessions', 'expires_at', timestamp, 500],
     ['challenges', 'expires_at', timestamp, 1000],
     ['recent_auth', 'expires_at', timestamp, 500],
     ['rate_limits', 'expires_at', timestamp, 3500],
   ] as const;
-  await env.DB.batch(statements.map(([table, field, cutoff, limit]) => env.DB.prepare(`DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE ${field}<? LIMIT ${limit})`).bind(cutoff)));
+  const security=await env.DB.batch(statements.map(([table, field, cutoff, limit]) => env.DB.prepare(`DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE ${field}<? LIMIT ${limit})`).bind(cutoff)));
+  security.forEach((result,index)=>{deleted[statements[index][0]]=result.meta.changes;pending ||= result.meta.changes>=statements[index][3];});
+  return {deleted,pending};
 }

@@ -7,6 +7,8 @@ import { MAX_MONITORS_TOTAL, nowSeconds } from './env';
 import { rateLimit, sessionUser } from './security';
 import { expireInactiveAccounts } from './account-policy';
 import { estimateCapacity } from '../shared/capacity';
+import { infrastructure } from './infrastructure';
+import { retentionStatus } from './retention-job';
 
 export function denyInactive(c: Context<AppEnv>, user: User) {
   if (user.accountStatus !== 'active') return c.json({ code: user.accountStatus === 'pending' ? 'ACCOUNT_PENDING' : 'ACCOUNT_SUSPENDED',
@@ -44,6 +46,10 @@ owner.use('*', async (c, next) => {
   if (!user.isOwner || user.accountStatus !== 'active') throw new HTTPException(403, { message: 'Esta sección es exclusiva del propietario.' });
   if (c.req.method !== 'GET') await rateLimit(c, 'owner', 30, 60);
   await next();
+});
+owner.get('/infrastructure', async c => {
+  const [data,retention]=await Promise.all([infrastructure(c.env),retentionStatus(c.env)]);
+  return c.json({...data,retention});
 });
 owner.get('/accounts', async c => {
   await expireInactiveAccounts(c.env);

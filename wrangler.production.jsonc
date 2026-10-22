@@ -18,7 +18,11 @@
   "vars": {
     "APP_ORIGIN": "https://vyrsea.com",
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFhA6rhUzje32QRc",
-    "PUBLIC_SITE_URL": "https://vyrsea.com"
+    "PUBLIC_SITE_URL": "https://vyrsea.com",
+    "CLOUDFLARE_ACCOUNT_ID": "93d96c1211328e81e46cb2bc8af30d47",
+    "CLOUDFLARE_D1_ID": "369925d9-8f07-48b0-a255-be77a88b326d",
+    "CLOUDFLARE_QUEUE_ID": "8d42e8848d624eb4b0017a0ed12927ad",
+    "CLOUDFLARE_SCRIPT_NAME": "vyrsea-monitor"
   },
   "d1_databases": [
     {
@@ -39,7 +43,7 @@
       {
         "queue": "vyrsea-checks",
         "max_batch_size": 1,
-        "max_batch_timeout": 5,
+        "max_batch_timeout": 0,
         "max_retries": 3,
         "max_concurrency": 3,
         "dead_letter_queue": "vyrsea-dead-letters"

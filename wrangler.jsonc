@@ -39,7 +39,7 @@
       {
         "queue": "vyrsea-checks",
         "max_batch_size": 1,
-        "max_batch_timeout": 5,
+        "max_batch_timeout": 0,
         "max_retries": 3,
         "max_concurrency": 3,
         "dead_letter_queue": "vyrsea-dead-letters"

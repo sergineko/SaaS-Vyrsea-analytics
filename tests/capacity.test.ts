@@ -17,6 +17,7 @@ describe('Cost bounds', () => {
 });
 
 let mf: Miniflare, db: D1Database, networkCalls = 0;
+let slowGate:Promise<void>|undefined,releaseSlow:(()=>void)|undefined;
 const now = () => Math.floor(Date.now()/1000);
 const invoke = (path:string, body:unknown = {}) => mf.dispatchFetch(`http://localhost/__test/${path}`,{method:'POST',body:JSON.stringify(body)});
 beforeAll(async () => {
@@ -24,6 +25,7 @@ beforeAll(async () => {
   mf = new Miniflare({modules:true,scriptPath:'.test-build/capacity-worker.mjs',compatibilityDate:'2026-07-01',compatibilityFlags:['nodejs_compat'],bindings:{APP_ORIGIN:'http://localhost:5173'},d1Databases:{DB:'capacity-db'},queueProducers:{CHECK_QUEUE:'capacity-checks'},outboundService:async(request:{url:string}) => {
     networkCalls++;
     if (request.url.includes('cloudflare-dns.com')) return Response.json({Status:0,Answer:[{type:1,data:'1.1.1.1'}]});
+    if(new URL(request.url).hostname==='m5.example.com'&&slowGate)await slowGate;
     const hop = Number(new URL(request.url).pathname.slice(1));
     return hop < 3 ? new Response(null,{status:302,headers:{Location:`/${hop+1}`}}) : new Response('Fixture');
   }});
@@ -62,5 +64,14 @@ describe.sequential('Cost controls on actual Worker/D1', () => {
     expect((await invoke('cleanup',{timestamp:now()})).status).toBe(200);
     expect(await db.prepare("SELECT id FROM checks WHERE id='expired'").first()).toBeNull();
     expect((await db.prepare('SELECT COUNT(*) AS n FROM checks').first<{n:number}>())!.n).toBe(5);
+  });
+  it('finishes a healthy probe while its sibling target is still waiting',async()=>{
+    slowGate=new Promise(resolve=>{releaseSlow=resolve;});
+    const pending=invoke('consume',{jobs:[{monitorId:'m5',slot:Math.floor(now()/60)*60},{monitorId:'m6',slot:Math.floor(now()/60)*60}]});
+    try{
+      await expect.poll(async()=>Boolean(await db.prepare("SELECT id FROM checks WHERE monitor_id='m6'").first()),{timeout:2000}).toBe(true);
+      expect(await db.prepare("SELECT id FROM checks WHERE monitor_id='m5'").first()).toBeNull();
+    }finally{releaseSlow?.();slowGate=undefined;}
+    expect((await pending).status).toBe(200);
   });
 });

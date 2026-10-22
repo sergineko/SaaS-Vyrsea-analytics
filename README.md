@@ -136,3 +136,5 @@ Documentación oficial consultada el 22 de octubre de 2026:
 - [Static Assets y rutas de la SPA](https://developers.cloudflare.com/workers/static-assets/binding/)
 - [Turnstile: validación en servidor](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/)
 - [SimpleWebAuthn: registro y acceso](https://simplewebauthn.dev/docs/packages/server)
+
+La pantalla de propietario incluye [métricas reales de Cloudflare](docs/infrastructure-metrics.md) y estado de la [limpieza automática del histórico](docs/historical-retention.md).
