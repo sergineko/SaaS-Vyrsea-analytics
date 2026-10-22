@@ -1,0 +1,83 @@
+import { Hono } from 'hono';
+import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import { z } from 'zod';
+import type { AppEnv, User } from './env';
+import { MAX_MONITORS_TOTAL, nowSeconds } from './env';
+import { rateLimit, sessionUser } from './security';
+import { expireInactiveAccounts } from './account-policy';
+
+export function denyInactive(c: Context<AppEnv>, user: User) {
+  if (user.accountStatus !== 'active') return c.json({ code: user.accountStatus === 'pending' ? 'ACCOUNT_PENDING' : 'ACCOUNT_SUSPENDED',
+    error: user.accountStatus === 'pending' ? 'Tu solicitud está pendiente de aprobación.' : 'Tu cuenta está suspendida. Solicita la revisión del propietario.' }, 403);
+}
+
+const requireSession = async (c: Context<AppEnv>, next: () => Promise<void>) => {
+  const user = await sessionUser(c);
+  if (!user) throw new HTTPException(401, { message: 'Inicia sesión para continuar.' });
+  c.set('user', user);
+  await next();
+};
+
+export const account = new Hono<AppEnv>();
+account.use('*', requireSession);
+account.post('/activity', async c => {
+  const denied = denyInactive(c, c.get('user')); if (denied) return denied;
+  // No rate-limit counter write here: the conditional update itself bounds writes to one/hour.
+  await c.env.DB.prepare("UPDATE users SET last_active_at=? WHERE id=? AND account_status='active' AND last_active_at<=?")
+    .bind(nowSeconds(), c.get('user').id, nowSeconds() - 3600).run();
+  return c.json({ ok: true });
+});
+account.post('/review', async c => {
+  const user = c.get('user');
+  if (user.accountStatus !== 'suspended') throw new HTTPException(409, { message: 'Esta cuenta no necesita solicitar una reactivación.' });
+  await c.env.DB.prepare("UPDATE users SET review_requested_at=? WHERE id=? AND account_status='suspended' AND review_requested_at IS NULL")
+    .bind(nowSeconds(), user.id).run();
+  return c.json({ ok: true });
+});
+
+export const owner = new Hono<AppEnv>();
+owner.use('*', requireSession);
+owner.use('*', async (c, next) => {
+  const user = c.get('user');
+  if (!user.isOwner || user.accountStatus !== 'active') throw new HTTPException(403, { message: 'Esta sección es exclusiva del propietario.' });
+  if (c.req.method !== 'GET') await rateLimit(c, 'owner', 30, 60);
+  await next();
+});
+owner.get('/accounts', async c => {
+  await expireInactiveAccounts(c.env);
+  const [accounts, usage] = await c.env.DB.batch([
+    c.env.DB.prepare(`SELECT u.id,u.username,u.created_at AS createdAt,u.account_status AS accountStatus,u.is_owner AS isOwner,
+      u.plan_id AS planId,u.last_active_at AS lastActiveAt,u.status_changed_at AS statusChangedAt,u.suspension_reason AS suspensionReason,
+      u.review_requested_at AS reviewRequestedAt,COUNT(m.id) AS monitors,COUNT(DISTINCT m.root_domain) AS domains
+      FROM users u LEFT JOIN monitors m ON m.user_id=u.id GROUP BY u.id
+      ORDER BY CASE WHEN u.account_status='pending' OR u.review_requested_at IS NOT NULL THEN 0 ELSE 1 END,u.created_at DESC LIMIT 100`),
+    c.env.DB.prepare(`SELECT (SELECT COUNT(*) FROM monitors) AS monitors,
+      (SELECT COUNT(*) FROM check_jobs) AS queuedChecks,
+      (SELECT COUNT(*) FROM users WHERE account_status='active') AS activeAccounts`),
+  ]);
+  return c.json({ accounts: accounts.results, usage: { ...(usage.results[0] as Record<string, number>), monitorLimit: MAX_MONITORS_TOTAL, accountLimit: 100 }, inactivityDays: 14 });
+});
+owner.post('/accounts/:id/:action', async c => {
+  z.object({}).strict().parse(await c.req.json());
+  const action = z.enum(['approve', 'suspend']).parse(c.req.param('action'));
+  const id = c.req.param('id'), timestamp = nowSeconds();
+  const target = await c.env.DB.prepare('SELECT id,is_owner,account_status FROM users WHERE id=?').bind(id).first<{id: string; is_owner: number; account_status: string}>();
+  if (!target) throw new HTTPException(404, { message: 'No se ha encontrado la cuenta.' });
+  if (target.is_owner) throw new HTTPException(409, { message: 'La cuenta de propietario se protege frente a estos cambios.' });
+  if ((action === 'approve') === (target.account_status === 'active')) throw new HTTPException(409, { message: 'La cuenta ya tiene ese estado.' });
+  // Start in the next minute so deliveries from before suspension/approval cannot be accepted.
+  const resumeAt = (Math.floor(timestamp / 60) + 1) * 60;
+  await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE users SET account_status=?,suspension_reason=?,status_changed_at=?,review_requested_at=NULL,
+      last_active_at=CASE WHEN ?='approve' THEN ? ELSE last_active_at END,
+      monitoring_since=CASE WHEN ?='approve' THEN ? ELSE monitoring_since END
+      WHERE id=? AND is_owner=0 AND account_status${action === 'approve' ? " IN ('pending','suspended')" : "='active'"}`)
+      .bind(action === 'approve' ? 'active' : 'suspended', action === 'suspend' ? 'owner' : null, timestamp, action, timestamp, action, resumeAt, id),
+    c.env.DB.prepare('DELETE FROM check_jobs WHERE monitor_id IN (SELECT id FROM monitors WHERE user_id=?)').bind(id),
+    c.env.DB.prepare(`UPDATE monitors SET next_check_at=MAX(next_check_at,?),failures=CASE WHEN status='down' THEN failures ELSE 0 END,
+      status=CASE WHEN status='degraded' THEN 'pending' ELSE status END WHERE user_id=?`)
+      .bind(resumeAt, id),
+  ]);
+  return c.json({ ok: true });
+});

@@ -3,6 +3,7 @@ import type { Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { AppEnv, User } from './env';
 import { nowSeconds } from './env';
+import { expireInactiveAccounts, INACTIVITY_CUTOFF } from './account-policy';
 
 export const bytesToBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 export const base64ToBytes = (value: string) => Uint8Array.from(atob(value), c => c.charCodeAt(0));
@@ -23,8 +24,16 @@ export const isLocal = (origin: string) => /^http:\/\/localhost(?::\d+)?$/.test(
 export async function sessionUser(c: Context<AppEnv>): Promise<User | null> {
   const token = readCookie(c, 'session');
   if (!token) return null;
-  return c.env.DB.prepare('SELECT u.id, u.username, u.created_at AS createdAt FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?')
-    .bind(await digest(token), nowSeconds()).first<User>();
+  const statement = c.env.DB.prepare(`SELECT u.id,u.username,u.created_at AS createdAt,u.account_status AS accountStatus,u.is_owner AS isOwner,
+    u.plan_id AS planId,u.last_active_at AS lastActiveAt,u.suspension_reason AS suspensionReason,u.review_requested_at AS reviewRequestedAt
+    FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?`)
+    .bind(await digest(token), nowSeconds());
+  let user = await statement.first<User>();
+  if (user?.accountStatus === 'active' && user.planId === 'free' && !user.isOwner && user.lastActiveAt < nowSeconds() - INACTIVITY_CUTOFF) {
+    await expireInactiveAccounts(c.env, nowSeconds(), user.id);
+    user = await statement.first<User>();
+  }
+  return user ? { ...user, isOwner: Boolean(user.isOwner) } : null;
 }
 export async function newSession(c: Context<AppEnv>, userId: string) {
   const token = randomToken();

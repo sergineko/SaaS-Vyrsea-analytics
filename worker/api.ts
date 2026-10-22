@@ -13,11 +13,13 @@ import { registeredDomain } from '../shared/domains';
 import { accountPlan, backfillDomains } from './plans';
 import { intervalLabel } from '../shared/plans';
 import { maintenance } from './maintenance';
+import { denyInactive } from './accounts';
 
 export const api = new Hono<AppEnv>();
 api.use('*', async (c, next) => {
   const user = await sessionUser(c);
   if (!user) throw new HTTPException(401, { message: 'Inicia sesión para continuar.' });
+  const denied = denyInactive(c, user); if (denied) return denied;
   c.set('user', user);
   if (!['GET', 'HEAD'].includes(c.req.method)) await rateLimit(c, 'write', 20, 60);
   await next();

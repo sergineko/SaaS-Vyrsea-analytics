@@ -25,7 +25,7 @@ export function demoData(days = 1, mode: DemoMode = 'free'): DashboardData {
     lastResponseMs: [182, 834][i], lastError: i === 1 ? 'HTTP 503' : null, nextCheckAt: now + (i === 0 ? 1800 : 858), createdAt: now - 604800,
   }));
   return {
-    user: { id: 'demo', username: 'estudio', createdAt: now - 604800 }, monitors,
+    user: { id: 'demo', username: 'estudio', createdAt: now - 604800, accountStatus:'active',isOwner:false,planId:'free',lastActiveAt:now,suspensionReason:null,reviewRequestedAt:null }, monitors,
     maintenance: [
       {id:'maintenance-demo-active',monitorId:'demo-0',monitorName:'Web corporativa',startsAt:now-600,endsAt:now+1800,reason:'Actualización programada de la web',createdAt:now-3600,cancelledAt:null},
       {id:'maintenance-demo-next',monitorId:'demo-1',monitorName:'Tienda online',startsAt:now+86400,endsAt:now+90000,reason:'Actualización del catálogo',createdAt:now-3600,cancelledAt:null},
@@ -73,7 +73,7 @@ function advancedDemoData(requestedDays: number, mode: 'pro' | 'business'): Dash
     const resolvedFailures=monitor.id==='demo-3-0'?countSlots(Math.max(bucket,now-28800),Math.min(end,now-28201),monitor.lastCheckedAt!):0;
     return {monitorId:monitor.id,hour:bucket,total,successful:Math.max(0,total-failed-resolvedFailures),totalMs:total*(145+(index*19)%230+Math.round(Math.sin(j/3+index)*25))};
   }));
-  return {user:{id:'demo',username:mode==='business'?'grupo-meridiano':'norte-digital',createdAt:now-120*86400},monitors,stats,maintenance,
+  return {user:{id:'demo',username:mode==='business'?'grupo-meridiano':'norte-digital',createdAt:now-120*86400,accountStatus:'active',isOwner:false,planId:mode,lastActiveAt:now,suspensionReason:null,reviewRequestedAt:null},monitors,stats,maintenance,
     incidents:[{id:'demo-open',monitorId:'demo-0-2',monitorName:'API de pedidos · Atelier Norte',openedAt:now-840,resolvedAt:null,reason:'HTTP 503 · ejemplo de caída confirmada'},
       {id:'demo-resolved',monitorId:'demo-3-0',monitorName:'Web principal · Clínica Alba',openedAt:now-28800,resolvedAt:now-28200,reason:'Tiempo de espera agotado · ejemplo resuelto'}],
     notifications:[{id:'demo-notice',monitorId:'demo-0-2',kind:'down',message:'Atelier Norte · API de pedidos no disponible. Incidencia de ejemplo.',createdAt:now-840,readAt:null}],

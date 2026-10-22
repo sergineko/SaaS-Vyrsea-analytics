@@ -57,6 +57,11 @@ describe.sequential('MVP on the actual Workers runtime and SQLite D1', () => {
     cookie = sessionCookie(verification);
     expect(verification.headers.get('set-cookie')).toContain('HttpOnly');
     expect(verification.headers.get('set-cookie')).toContain('SameSite=Strict');
+    expect((await api('/dashboard')).status).toBe(403);
+    const pending = await db.prepare("SELECT id,account_status FROM users WHERE username='sergio'").first<{id:string;account_status:string}>();
+    expect(pending!.account_status).toBe('pending');
+    // Trusted owner approval fixture; the actual approval API is covered in accounts.test.ts.
+    await db.prepare("UPDATE users SET account_status='active' WHERE id=?").bind(pending!.id).run();
     expect((await dashboard()).user.username).toBe('sergio');
     const session = await db.prepare('SELECT token_hash FROM sessions').first<{ token_hash: string }>();
     expect(session!.token_hash).not.toBe(cookie.split('=')[1]);
@@ -88,7 +93,7 @@ describe.sequential('MVP on the actual Workers runtime and SQLite D1', () => {
   });
   it('keeps each account isolated', async () => {
     const id = (await dashboard()).monitors[0].id;
-    await db.prepare("INSERT INTO users(id,username,created_at) VALUES('other','other',1)").run();
+    await db.prepare("INSERT INTO users(id,username,created_at,account_status,last_active_at) VALUES('other','other',1,'active',unixepoch())").run();
     const raw = 'other-test-session';
     const { createHash } = await import('node:crypto');
     const hash = createHash('sha256').update(raw).digest('base64');
@@ -171,7 +176,7 @@ describe.sequential('MVP on the actual Workers runtime and SQLite D1', () => {
     expect((await dashboard()).limits.id).toBe('free');
   });
   it('enforces the two-monitor quota for concurrent inserts and rejects duplicate URLs', async () => {
-    await db.prepare("INSERT INTO users(id,username,created_at) VALUES('race','race',1)").run();
+    await db.prepare("INSERT INTO users(id,username,created_at,account_status,last_active_at) VALUES('race','race',1,'active',unixepoch())").run();
     const insert=(i:number)=>db.prepare('INSERT INTO monitors(id,user_id,name,url,root_domain,next_check_at,created_at) VALUES(?,?,?,?,?,0,1)')
       .bind(`race-${i}`,'race','Race',`https://s${i}.negocio.es/`,'negocio.es').run();
     const results=await Promise.allSettled([insert(1),insert(2),insert(3)]);
@@ -180,7 +185,7 @@ describe.sequential('MVP on the actual Workers runtime and SQLite D1', () => {
     expect(duplicate[0].status).toBe('rejected');
   });
   it('reads independent domain and monitor limits from the server-side plan', async () => {
-    await db.prepare("INSERT INTO users(id,username,created_at,plan_id) VALUES('plan-fixture','plan-fixture',1,'pro')").run();
+    await db.prepare("INSERT INTO users(id,username,created_at,plan_id,account_status,last_active_at) VALUES('plan-fixture','plan-fixture',1,'pro','active',unixepoch())").run();
     for(const [i,domain] of ['uno.es','dos.co.uk'].entries()) await db.prepare('INSERT INTO monitors(id,user_id,name,url,root_domain,next_check_at,created_at) VALUES(?,?,?,?,?,0,1)')
       .bind(`plan-${i}`,'plan-fixture','Plan fixture',`https://${domain}/`,domain).run();
     // A trusted fixture can assign a proposed plan; the public API cannot.

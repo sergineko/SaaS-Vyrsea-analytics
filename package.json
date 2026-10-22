@@ -16,6 +16,7 @@
     "db:local": "wrangler d1 migrations apply DB --local",
     "db:remote": "wrangler d1 migrations apply DB --remote",
     "deploy": "node scripts/deploy.mjs",
+    "deploy:production": "node scripts/deploy.mjs --config wrangler.production.jsonc",
     "preview": "wrangler dev --port 8787 --test-scheduled",
     "check": "pnpm run typecheck && pnpm run test && pnpm run build"
   },

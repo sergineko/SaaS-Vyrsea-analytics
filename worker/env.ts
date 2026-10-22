@@ -8,7 +8,7 @@ export interface Env {
   TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
 }
-export interface User { id: string; username: string; createdAt: number }
+export type User = import('../shared/accounts').AccountUser;
 export type AppEnv = { Bindings: Env; Variables: { user: User } };
 export const MAX_MONITORS_TOTAL = 10;
 // Idempotency slots use Cron's one-minute resolution; cadence comes from the account plan.

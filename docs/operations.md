@@ -1,5 +1,9 @@
 # Seguridad y operación de Vyrsea
 
+## Acceso supervisado
+
+El registro está sujeto a aprobación manual. Las cuentas Free se suspenden tras más de 14 días sin uso, con una hora de margen por la agrupación de escrituras de actividad. La suspensión detiene las sondas y requiere revisión para reactivar. El propietario y los planes de pago están exentos. Consulta [estados, controles y cuenta Business del propietario](account-access.md).
+
 ## Controles incluidos
 
 El servidor valida sesión y propietario en cada operación. El acceso a un monitor ajeno devuelve 404. Las cuotas de dominios y monitores están en triggers SQLite para resistir peticiones concurrentes. La API limita cuerpos a 16 KiB y valida campos con Zod; todas las consultas usan parámetros. El plan se obtiene de la cuenta en D1; no existe una ruta de autoasignación de planes ni se aceptan campos de cuota enviados por el cliente.

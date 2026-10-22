@@ -27,9 +27,9 @@ flowchart LR
 | Identidad | SimpleWebAuthn, passkeys con verificación de usuario obligatoria y sesiones HttpOnly |
 | Formularios | Turnstile en registro de producción, validado en servidor |
 | Planificador | Un Cron por minuto, hasta diez monitores vencidos por ejecución |
-| Transporte | Queue `vyrsea-checks`, un mensaje con hasta dos monitores; un consumidor concurrente |
+| Transporte | Queue `vyrsea-checks`, un mensaje con hasta tres monitores; un consumidor concurrente |
 | Fallos de entrega | Tres reintentos con 60 segundos de retraso, DLQ y outbox recuperable |
-| Retención | Cron a las 03:17 UTC, eliminaciones acotadas por tabla |
+| Retención | El mismo Cron por minuto ejecuta limpieza a las 03:17 UTC, eliminaciones acotadas por tabla |
 | Publicación | Wrangler, Static Assets y backend en el mismo Worker; rutas inexistentes devuelven 404 |
 | Dominios y cuotas | Public Suffix List con `tldts`; plan del usuario y límites autoritativos en D1 |
 
@@ -38,13 +38,13 @@ flowchart LR
 ## Flujo de una comprobación
 
 1. Cron consulta el índice `(paused, next_check_at)`. Los slots de idempotencia tienen resolución de un minuto; la próxima reserva respeta la frecuencia de la cuenta (Free 15 min, Starter 5 min, Pro / Agencia y Business 1 min).
-2. Una transacción D1 añade el trabajo a `check_jobs` y avanza la próxima ejecución. La reserva evita duplicados y también se aplica al botón manual.
-3. El despachador envía mensajes con hasta dos trabajos y marca su entrega **después** de que Queues acepte el mensaje. Un error de envío deja el outbox pendiente para el siguiente minuto.
+2. Una transacción D1 agrupa las reservas de hasta diez monitores, añade el trabajo a `check_jobs` y avanza la próxima ejecución. La reserva evita duplicados y también se aplica al botón manual.
+3. El despachador agrupa los mensajes con `sendBatch` y envía mensajes con hasta tres trabajos y marca su entrega **después** de que Queues acepte el mensaje. Un error de envío deja el outbox pendiente para el siguiente minuto.
 4. El consumidor comprueba que el monitor siga existiendo y activo, y que el slot no se haya procesado. Valida URL y DNS A/AAAA y solicita los encabezados HTTP. Cada salto de redirección vuelve a validarse; cancela el cuerpo para no descargarlo.
 5. Una transacción D1 inserta el resultado, actualiza el agregado horario, abre o cierra incidencias, genera alertas, actualiza `last_slot` y elimina el trabajo pendiente. Todas las escrituras están protegidas por el slot anterior. Una repetición no duplica estadísticas ni alertas.
 6. Una reserva entregada que siga sin finalizar después de quince minutos puede reenviarse desde el outbox. Una entrega antigua se ignora si ya se registró un slot posterior. No se fabrican comprobaciones de los periodos perdidos.
 
-El `max_concurrency: 1` y `max_batch_size: 1` mantienen un consumo predecible. Los dos monitores de cada mensaje se procesan secuencialmente. Con cuatro solicitudes HTTP por monitor como máximo y dos consultas DNS por salto, hay hasta 24 peticiones de red por mensaje, más las llamadas D1, por debajo de las 50 subsolicitudes del plan Free. No aumentar tamaños sin recalcular este presupuesto y medir CPU.
+El `max_concurrency: 1` y `max_batch_size: 1` mantienen un consumo predecible. Los tres monitores de cada mensaje se procesan secuencialmente. Con cuatro solicitudes HTTP por monitor como máximo y dos consultas DNS por salto, hay hasta 36 peticiones de red por mensaje, más las llamadas D1, por debajo de las 50 subsolicitudes del plan Free. No aumentar tamaños sin recalcular este presupuesto y medir CPU.
 
 ## Estados y estadísticas
 
@@ -125,3 +125,11 @@ Si existe `document.modelContext`, la web registra herramientas WebMCP de consul
 | POST | `/api/notifications/read` | Marcar todas las alertas de la cuenta como leídas |
 
 Todas las rutas de datos requieren sesión; todas las escrituras exigen JSON y `Origin` exacto. No hay CORS entre sitios, endpoint público para disparar Cron ni token administrativo incluido en el frontend.
+
+## Acceso supervisado
+
+El registro crea cuentas pendientes. El propietario aprueba y suspende desde un panel privado. La elegibilidad de cuenta y su fecha de actividad se verifican al reservar, consumir y guardar resultados. Free sin uso durante más de 14 días queda suspendido (una hora de margen por las escrituras de actividad agrupadas). Los planes de pago y el propietario están exentos. Consulta [la política y el aprovisionamiento seguro del propietario](account-access.md).
+
+Agrupar consultas reduce viajes al servicio D1, pero no elimina las filas escritas ni las operaciones facturables de Queues. Cada resultado conserva su transacción atómica y el histórico por comprobación. No se aumenta la capacidad global de diez monitores.
+
+Se registra un único disparador Cron para Vyrsea; la limpieza diaria se integra a las 03:17 UTC. Así se ocupa una sola plaza del límite de disparadores compartido por la cuenta Free.

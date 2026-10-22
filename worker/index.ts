@@ -8,6 +8,7 @@ import type { AppEnv, Env, QueuePayload } from './env';
 import { cleanup, consume, schedule } from './jobs';
 import { isLocal, sessionUser } from './security';
 import { BILLING, PLAN_CATALOG } from '../shared/plans';
+import { account, owner } from './accounts';
 
 const app = new Hono<AppEnv>();
 app.use('/api/*', bodyLimit({ maxSize: 16384, onError: c => c.json({ error: 'Solicitud demasiado grande.' }, 413) }));
@@ -25,10 +26,13 @@ app.use('/api/*', async (c, next) => {
 });
 app.get('/api/health', c => c.json({ ok: true, service: 'vyrsea', version: '0.2.0' }));
 app.get('/api/config', c => c.json({ turnstileSiteKey: c.env.TURNSTILE_SITE_KEY ?? '',
+  registrationMode: 'approval', freeInactivityDays: 14,
   registrationAvailable: isLocal(c.env.APP_ORIGIN) || Boolean(c.env.TURNSTILE_SITE_KEY && c.env.TURNSTILE_SECRET_KEY) }));
 app.get('/api/me', async c => c.json({ user: await sessionUser(c) }));
 app.get('/api/plans', c => c.json({ plans: PLAN_CATALOG, billing: BILLING, activeProbeProviders: ['cloudflare'], multiProbeActive: false }));
 app.route('/api/auth', auth);
+app.route('/api/account', account);
+app.route('/api/owner', owner);
 app.route('/api', api);
 app.notFound(c => c.req.path === '/api' || c.req.path.startsWith('/api/')
   ? c.json({ error: 'Ruta no encontrada.' }, 404)
@@ -37,6 +41,7 @@ app.onError((error, c) => {
   if (error instanceof HTTPException) return c.json({ error: error.message }, error.status);
   if (error instanceof ZodError) return c.json({ error: error.issues[0]?.message ?? 'Revisa los campos.' }, 400);
   const detail = error.message + ' ' + error.cause;
+  if (/ACCOUNT_INACTIVE/.test(detail)) return c.json({ code: 'ACCOUNT_SUSPENDED', error: 'La cuenta necesita aprobación antes de crear monitores.' }, 403);
   if (/DOMAIN_CAPACITY/.test(detail)) return c.json({ error: 'Has alcanzado el límite de dominios de tu plan. En Free los dos monitores deben pertenecer al mismo dominio principal.' }, 409);
   if (/MONITOR_CAPACITY/.test(detail)) return c.json({ error: 'Has alcanzado el límite de monitores de tu plan. Free incluye 1 dominio y 2 monitores en total; los pausados también cuentan.' }, 409);
   if (/DUPLICATE_MONITOR/.test(detail)) return c.json({ error: 'Ya tienes un monitor para esta URL.' }, 409);
@@ -54,7 +59,10 @@ app.onError((error, c) => {
 export default {
   fetch: app.fetch,
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(controller.cron === '17 3 * * *' ? cleanup(env) : schedule(env));
+    const time = new Date(controller.scheduledTime);
+    // One Cron binding for the entire MVP; the account's Free limit is shared.
+    const daily = time.getUTCHours() === 3 && time.getUTCMinutes() === 17;
+    ctx.waitUntil(controller.cron === '17 3 * * *' ? cleanup(env) : Promise.all([schedule(env), ...(daily ? [cleanup(env)] : [])]));
   },
   async queue(batch: MessageBatch<QueuePayload>, env: Env) {
     for (const message of batch.messages) {

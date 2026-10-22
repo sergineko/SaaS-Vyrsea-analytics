@@ -6,6 +6,8 @@ Repositorio: [sergineko/SaaS-Vyrsea-analytics](https://github.com/sergineko/SaaS
 
 ## Qué funciona
 
+- Beta con aprobación manual de nuevas cuentas y reactivaciones desde un panel exclusivo del propietario. Free se suspende tras más de 14 días sin uso real (una hora de margen por agrupación de actividad); el refresco automático, sondas y agentes no mantienen activa la cuenta. [Acceso y política de inactividad](docs/account-access.md).
+
 - Registro y acceso con passkeys verificadas en el servidor. Sesiones de siete días, tokens aleatorios almacenados como SHA-256, cookies HttpOnly y SameSite Strict; en HTTPS usan Secure y prefijo `__Host-`.
 - Plan **Free: 1 dominio registrable y 2 monitores en total por cuenta**, con límites atómicos en SQLite. Los monitores pausados también ocupan capacidad. El prototipo conserva además un tope técnico de **10 monitores entre todas las cuentas**.
 - Agrupación automática del dominio principal y sus subdominios, vista por dominios, filtros y cuotas visibles. La identificación usa Public Suffix List, incluidos sufijos como `co.uk` y proveedores como `github.io`.
@@ -34,7 +36,7 @@ pnpm run dev
 
 Abre **http://localhost:5173**. `pnpm run dev` aplica las migraciones locales, arranca Vite y Wrangler y dispara el Cron local cada minuto. D1 y Queues se ejecutan en el runtime local de Cloudflare; no es una base de datos simulada en memoria del frontend. Los datos locales quedan en `.wrangler/state`. Ejecuta `pnpm run build` para regenerar los documentos públicos que Vite sirve desde `dist` durante el desarrollo.
 
-El registro local permite prescindir de Turnstile únicamente cuando `APP_ORIGIN` es `http://localhost` con un puerto opcional. El navegador debe admitir passkeys y el sistema debe tener un gestor de credenciales o una llave de seguridad. Elige **Crear cuenta**, guarda la passkey y añade un monitor público como `https://www.cloudflare.com/`. El programador lo comprueba en el siguiente minuto. El panel se actualiza cada minuto; el botón de actualizar consulta el resultado sin provocar otra sonda.
+El registro local permite prescindir de Turnstile únicamente cuando `APP_ORIGIN` es `http://localhost` con un puerto opcional. El navegador debe admitir passkeys y el sistema debe tener un gestor de credenciales o una llave de seguridad. Elige **Crear cuenta**, guarda la passkey y espera la aprobación. Configura tu cuenta de propietario con el [procedimiento de acceso](docs/account-access.md); después añade un monitor público como `https://www.cloudflare.com/`. El programador lo comprueba en el siguiente minuto. El panel se actualiza cada minuto; el botón de actualizar consulta el resultado sin provocar otra sonda.
 
 No uses `127.0.0.1:5173` para registrar passkeys: el RP configurado es `localhost`. El puerto 5173 debe estar libre; Vite falla si está ocupado para evitar un cambio de origen silencioso. Para usar otro puerto configura ese mismo puerto en Vite y en `APP_ORIGIN`, en una copia `.dev.vars` de `.dev.vars.example`.
 
@@ -42,50 +44,21 @@ Con la configuración de origen local, `pnpm run preview` solo sirve para revisa
 
 ## Desplegar en tu Cloudflare Free
 
-**Todavía no está desplegado.** Esta sesión no tiene una cuenta de Cloudflare autenticada. El proyecto incluye una configuración local y un ID de D1 de ejemplo; no contiene claves ni recursos remotos creados.
+El Worker ya se ha publicado en [vyrsea-monitor.sergiotech.workers.dev](https://vyrsea-monitor.sergiotech.workers.dev), con D1, Queues, Turnstile y aprobación obligatoria. El dominio final **vyrsea.com** está en migración DNS. No registres cuentas reales en `workers.dev`: las passkeys y escrituras están vinculadas al origen final `https://vyrsea.com`.
 
-1. Comprueba que la cuenta esté en **Workers Free**. No actives Workers Paid ni servicios adicionales para este prototipo. Puedes validar primero con `workers.dev`; el dominio final acordado es **vyrsea.com**. Ese dominio tiene actualmente otro sitio: prepara su migración y sus URLs existentes antes de sustituirlo. Esta entrega no modifica DNS ni la web publicada.
+Los recursos remotos están separados con nombres `vyrsea-*`: `vyrsea-db`, `vyrsea-checks` y `vyrsea-dead-letters`. Se ha verificado Workers Free en la cuenta. Las seis migraciones están aplicadas en D1 remoto. La configuración pública de producción está en `wrangler.production.jsonc`; `wrangler.jsonc` conserva el entorno local. El secreto de Turnstile se guarda como Worker Secret, nunca en Git.
 
-2. Inicia sesión y consulta el subdominio Workers de la cuenta en el panel de Cloudflare:
+Para publicar cambios desde un terminal ya autenticado:
 
-   ```powershell
-   pnpm exec wrangler login
-   pnpm exec wrangler whoami
-   ```
+```powershell
+pnpm install --frozen-lockfile
+pnpm run check
+pnpm run deploy:production
+```
 
-3. Crea D1 y las dos colas:
+El despliegue compila, comprueba el HTML público, aplica migraciones pendientes y publica Worker + Static Assets. La configuración exige HTTPS, un UUID D1 real y una clave pública de Turnstile. Si falta su secreto, el servidor mantiene el registro desactivado. En esta estación Wrangler utiliza `XDG_CONFIG_HOME=.wrangler/config`; ese directorio está ignorado por Git.
 
-   ```powershell
-   pnpm exec wrangler d1 create vyrsea-db
-   pnpm exec wrangler queues create vyrsea-checks
-   pnpm exec wrangler queues create vyrsea-dead-letters
-   ```
-
-4. Actualiza `wrangler.jsonc`:
-
-   - `database_id`: el UUID devuelto al crear `vyrsea-db`.
-   - `APP_ORIGIN`: el origen HTTPS exacto, sin barra final. En una prueba puede ser `https://vyrsea-monitor.TU-SUBDOMINIO.workers.dev`; en producción será `https://vyrsea.com` después de configurar el Custom Domain en Cloudflare. **Usa el origen definitivo antes de registrar usuarios reales**: las passkeys están vinculadas al hostname.
-   - `PUBLIC_SITE_URL`: `https://vyrsea.com`, origen canónico de la web pública. Evita indexar entornos de pruebas; no añadas su hostname al sitemap.
-   - `TURNSTILE_SITE_KEY`: clave pública de un widget Turnstile creado para ese hostname. Usa modo Managed y permite el dominio exacto.
-
-5. Guarda el secreto de Turnstile mediante la entrada interactiva de Wrangler. No lo escribas en el repositorio ni en el frontend:
-
-   ```powershell
-   pnpm exec wrangler secret put TURNSTILE_SECRET_KEY
-   ```
-
-   Si Wrangler propone crear el Worker al guardar el secreto, utiliza el mismo nombre `vyrsea-monitor`. La aplicación exige Turnstile en producción para registrar cuentas y valida `success`, hostname y acción `register` en Siteverify.
-
-6. Ejecuta las comprobaciones y despliega:
-
-   ```powershell
-   pnpm run check
-   pnpm run deploy
-   ```
-
-   El script de despliegue bloquea el origen local, el ID de ejemplo y la ausencia de clave pública; después compila, aplica las migraciones remotas y publica Worker + Static Assets. Si falta el secreto, el servidor deja el registro desactivado.
-
-7. Abre el origen configurado, crea una cuenta de prueba, añade una web y espera el primer ciclo. Los Cron pueden tardar unos minutos en propagarse. Revisa las métricas de CPU de Workers, filas de D1 y operaciones de Queues en Cloudflare con el uso real. En el dominio definitivo valida redirecciones, HTTPS, canónicas y Search Console/Bing antes de abrir el registro.
+La rama `main` pasa la validación de GitHub Actions. La conexión de despliegue continuo se configura por separado. Crear tu cuenta Business de propietario requiere registrar personalmente la passkey en el dominio definitivo y conceder el rol por UUID desde el [procedimiento de acceso](docs/account-access.md). No se habilita ningún pago.
 
 ### Capacidad y coste
 
@@ -94,7 +67,7 @@ La configuración reduce consumo; **no promete capacidad ilimitada ni sustituye 
 | Recurso | Diseño del prototipo |
 | --- | --- |
 | Sondas | 10 monitores Free × 96/día = 960/día como carga base |
-| Queues | Mensajes con hasta 2 monitores; aprox. 1.440–2.880 operaciones/día sin reintentos, según agrupación |
+| Queues | Mensajes con hasta 3 monitores; aprox. 1.152–2.880 operaciones/día para diez monitores Free sin reintentos, según agrupación |
 | Manuales | Respetan el intervalo del plan (Free: 15 minutos); no se suman a una comprobación ya reservada |
 | D1 | Consultas indexadas, ventanas de histórico autorizadas por cuenta, paginación, agregados por hora y limpieza diaria acotada |
 | CPU | Sin SSR ni hash de contraseñas; trabajo de red acotado. Validar los 10 ms de CPU en el entorno remoto |
@@ -133,7 +106,7 @@ pnpm exec wrangler dev --port 8788 --persist-to .wrangler/audit-state
 pnpm run audit http://127.0.0.1:8788/
 ```
 
-No ejecutes dos procesos Wrangler sobre el mismo directorio de persistencia. El auditor necesita Chrome instalado y crea su propio perfil temporal. Los informes HTML/JSON se guardan en `artifacts/`. La medición local del 22/10/2026 obtuvo **99/100/100/100 en móvil y 100/100/100/100 en escritorio**. Es un ensayo de laboratorio, no PageSpeed Insights del dominio público ni datos de usuarios reales. [Resultados y límites de la medición](docs/quality.md).
+No ejecutes dos procesos Wrangler sobre el mismo directorio de persistencia. El auditor necesita Chrome instalado y crea su propio perfil temporal. Los informes HTML/JSON se guardan en `artifacts/`. La medición local del 22/10/2026 obtuvo **100/100/100/100 en móvil y 100/100/100/100 en escritorio**. Es un ensayo de laboratorio, no PageSpeed Insights del dominio público ni datos de usuarios reales. [Resultados y límites de la medición](docs/quality.md).
 
 ## Documentación técnica
 

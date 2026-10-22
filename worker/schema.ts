@@ -3,6 +3,10 @@ import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(), username: text('username').notNull().unique(), createdAt: integer('created_at').notNull(), planId: text('plan_id').notNull().default('free'),
   domainLimit: integer('domain_limit'), monitorLimit: integer('monitor_limit'), historyDaysLimit: integer('history_days_limit'),
+  accountStatus: text('account_status', { enum: ['pending','active','suspended'] }).notNull().default('pending'),
+  isOwner: integer('is_owner', { mode: 'boolean' }).notNull().default(false), lastActiveAt: integer('last_active_at').notNull().default(0),
+  statusChangedAt: integer('status_changed_at').notNull().default(0), suspensionReason: text('suspension_reason'),
+  reviewRequestedAt: integer('review_requested_at'), monitoringSince: integer('monitoring_since').notNull().default(0),
 });
 export const credentials = sqliteTable('credentials', {
   id: text('id').primaryKey(), userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

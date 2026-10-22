@@ -13,6 +13,7 @@ for(const plan of ['Free','Starter','Pro / Agencia','Business'])assert.ok(html.i
 assert.ok(html.includes('29,99')&&html.includes('Consultar precios')&&html.includes('100'));
 assert.ok(html.includes('href="/?demo=pro"')&&html.includes('href="/?demo=business"'),'Advanced demos must be discoverable without JavaScript');
 assert.ok(html.includes('2 dominios + 15 monitores')&&html.includes('máximos independientes'),'Independent maximum quotas must be explicit');
+assert.ok(html.includes('aprobación manual')&&html.includes('14 días'),'Beta approval and inactivity policy must be public without JavaScript');
 assert.ok(readFileSync('dist/robots.txt','utf8').includes('Disallow: /api/'));
 assert.ok(readFileSync('dist/sitemap.xml','utf8').includes('<loc>https://vyrsea.com/</loc>'));
 assert.ok(readFileSync('dist/llms.txt','utf8').includes('No hay pagos ni correos activos'));

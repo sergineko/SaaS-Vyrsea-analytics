@@ -3,6 +3,7 @@ import { Logo } from './Brand';
 import { Pricing } from './Pricing';
 
 export const FAQ = [
+  ['¿Cómo accedo a la beta?', 'El registro requiere aprobación manual del propietario antes de crear monitores. Las cuentas Free con más de 14 días sin uso real se suspenden y detienen sus sondas. El refresco automático y las consultas de asistentes no cuentan como actividad. Puedes solicitar una reactivación para que el propietario la revise.'],
   ['¿Qué incluye el plan gratuito?', 'Un dominio principal y dos monitores HTTP. Puedes vigilar, por ejemplo, www.tunegocio.es y tienda.tunegocio.es. Las comprobaciones se realizan cada 15 minutos, el histórico es de 7 días y las alertas aparecen dentro del panel.'],
   ['¿Cómo se cuentan los dominios y los monitores?', 'Son dos máximos independientes por cuenta. En Starter puedes usar los 15 monitores entre 2 dominios, sin registrar el máximo de 5 dominios. Un dominio es el dominio registrable, como tunegocio.es, y agrupa sus subdominios. Cada URL vigilada consume un monitor; dos rutas diferentes consumen dos monitores. Los monitores en pausa también cuentan.'],
   ['¿Cuándo se confirma una caída?', 'Tras dos comprobaciones fallidas consecutivas. Al recibir una respuesta correcta se registra la recuperación. En Free, la confirmación tarda aproximadamente entre 15 y 30 minutos, más posibles retrasos de la cola o de la red.'],

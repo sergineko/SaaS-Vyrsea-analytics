@@ -1,0 +1,28 @@
+import { useEffect, useState } from 'react';
+import { RefreshCw, ShieldCheck } from 'lucide-react';
+import { request } from './api';
+import { dateTime, Modal } from './ui';
+import type { OwnerAccount, OwnerAccountsData } from '../shared/accounts';
+import './account-access.css';
+
+export function OwnerAccounts() {
+  const [data, setData] = useState<OwnerAccountsData | null>(null), [error, setError] = useState(''), [busy, setBusy] = useState('');
+  const [filter, setFilter] = useState('review'), [suspend, setSuspend] = useState<OwnerAccount | null>(null);
+  async function refresh() { try { setData(await request<OwnerAccountsData>('/owner/accounts')); setError(''); } catch (error) { setError((error as Error).message); } }
+  useEffect(() => { refresh(); }, []);
+  async function change(account: OwnerAccount, action: 'approve' | 'suspend') {
+    setBusy(account.id); setError('');
+    try { await request(`/owner/accounts/${account.id}/${action}`, 'POST'); setSuspend(null); await refresh(); }
+    catch (error) { setError((error as Error).message); } finally { setBusy(''); }
+  }
+  const accounts = data?.accounts.filter(account => filter === 'all' || (filter === 'review' ? account.accountStatus === 'pending' || account.reviewRequestedAt : account.accountStatus === filter)) ?? [];
+  return <div className="owner-accounts"><section className="panel owner-capacity"><div className="panel-heading"><div><h2>Capacidad de la beta</h2><p>La aprobación habilita el acceso. Las cuotas técnicas globales siguen aplicándose a todos los planes.</p></div><ShieldCheck size={22} /></div>{data && <dl><div><dt>Monitores registrados</dt><dd>{data.usage.monitors} / {data.usage.monitorLimit}</dd></div><div><dt>Cuentas activas</dt><dd>{data.usage.activeAccounts}</dd></div><div><dt>Comprobaciones en cola</dt><dd>{data.usage.queuedChecks}</dd></div><div><dt>Cuentas registradas</dt><dd>{data.accounts.length} / {data.usage.accountLimit}</dd></div></dl>}<p className="maintenance-note">Las cuentas Free se suspenden tras más de 14 días sin uso. El refresco automático, las sondas y las consultas de asistentes no renuevan la actividad. Los monitores suspendidos conservan su plaza hasta que se eliminan.</p></section>
+    <section className="panel"><div className="panel-heading owner-heading"><div><h2>Accesos y cuentas</h2><p>Solo tú puedes aprobar nuevas cuentas y reactivaciones.</p></div><button className="button secondary" disabled={Boolean(busy)} onClick={refresh}><RefreshCw size={15} />Actualizar solicitudes</button></div>
+      <div className="owner-filters"><label>Mostrar<select value={filter} onChange={event => setFilter(event.target.value)}><option value="review">Pendientes de revisión</option><option value="active">Activas</option><option value="suspended">Suspendidas</option><option value="all">Todas las cuentas</option></select></label><span>{accounts.length} cuentas</span></div>
+      {error && <p className="form-error owner-error" role="alert">{error}</p>}{!data && !error && <div className="empty-state" role="status">Cargando solicitudes…</div>}
+      {data && !accounts.length && <div className="empty-state"><ShieldCheck size={25} /><p>No hay cuentas en esta vista.</p></div>}
+      {accounts.map(account => <article className="owner-account" key={account.id}><div className="owner-account-copy"><div><h3>{account.username}</h3><span className={`status ${account.accountStatus === 'active' ? 'status-up' : account.accountStatus === 'pending' ? 'status-pending' : 'status-paused'}`}>{account.accountStatus === 'active' ? 'Activa' : account.accountStatus === 'pending' ? 'Pendiente' : 'Suspendida'}</span>{Boolean(account.isOwner) && <span className="count-pill">Propietario</span>}</div><p>{account.planId} · {account.domains} dominios · {account.monitors} monitores</p><small>Registrada {dateTime(account.createdAt)} · Último uso {account.lastActiveAt ? dateTime(account.lastActiveAt) : 'sin actividad'}</small>{account.suspensionReason && <small>{account.suspensionReason === 'inactivity' ? 'Suspendida por inactividad' : 'Suspendida por el propietario'}{account.reviewRequestedAt ? ' · Reactivación solicitada' : ''}</small>}</div>{!account.isOwner && (account.accountStatus === 'active' ? <button className="button secondary" disabled={Boolean(busy)} onClick={() => setSuspend(account)}>Suspender cuenta</button> : <button className="button primary" disabled={Boolean(busy)} onClick={() => change(account, 'approve')}>{busy === account.id ? 'Aplicando…' : account.accountStatus === 'pending' ? 'Aprobar acceso' : 'Reactivar cuenta'}</button>)}</article>)}
+    </section>
+    {suspend && <Modal title={`Suspender ${suspend.username}`} onClose={() => { if (!busy) setSuspend(null); }}><p className="muted">Se detendrán las sondas de sus {suspend.monitors} monitores y el acceso al panel. Podrás reactivar la cuenta desde esta sección.</p>{error && <p role="alert" className="form-error">{error}</p>}<div className="access-actions"><button className="button secondary" disabled={Boolean(busy)} onClick={() => setSuspend(null)}>Cancelar</button><button className="button primary" disabled={Boolean(busy)} onClick={() => change(suspend, 'suspend')}>{busy ? 'Suspendiendo…' : 'Confirmar suspensión'}</button></div></Modal>}
+  </div>;
+}

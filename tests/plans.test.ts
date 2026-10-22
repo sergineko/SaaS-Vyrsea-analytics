@@ -34,6 +34,7 @@ beforeAll(async()=>{
   for(const file of readdirSync('migrations').filter(name=>name.endsWith('.sql')&&name>'0002_domain_plans.sql').sort())await migrate(file);
   for(const plan of plans) {
     await db.prepare('INSERT INTO users(id,username,created_at,plan_id) VALUES(?,?,?,?)').bind(plan,plan,now,plan).run();
+    await db.prepare("UPDATE users SET account_status='active',last_active_at=? WHERE id=?").bind(now,plan).run();
     const raw=`plan-test-${plan}`, hash=createHash('sha256').update(raw).digest('base64');cookies[plan]=`pulso_session=${raw}`;
     await db.prepare('INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)').bind(hash,plan,now+3600).run();
     if(plan!=='business')await db.prepare('INSERT INTO monitors(id,user_id,name,url,root_domain,next_check_at,created_at) VALUES(?,?,?,?,?,0,?)').bind(`monitor-${plan}`,plan,plan,`https://${plan}.example.com`,'example.com',now).run();
@@ -48,6 +49,7 @@ describe.sequential('Four plans with billing disabled',()=>{
     expect((await db.prepare('SELECT COUNT(*) AS n FROM credentials').first<{n:number}>())!.n).toBe(3);
     expect((await db.prepare("SELECT COUNT(*) AS n FROM checks WHERE id LIKE 'legacy-%'").first<{n:number}>())!.n).toBe(3);
     expect((await db.prepare('PRAGMA foreign_key_check').all()).results).toEqual([]);
+    expect((await db.prepare("SELECT DISTINCT account_status,is_owner FROM users WHERE id LIKE 'legacy-%'").all()).results).toEqual([{account_status:'active',is_owner:0}]);
     expect((await db.prepare("SELECT next_check_at FROM monitors WHERE id='legacy-monitor-free'").first<{next_check_at:number}>())!.next_check_at).toBe(now+900);
   });
   it('publishes exactly four plans and keeps all payment and multi-provider activation disabled',async()=>{

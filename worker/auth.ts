@@ -6,6 +6,7 @@ import { z } from 'zod';
 import type { AppEnv } from './env';
 import { nowSeconds } from './env';
 import { base64ToBytes, bytesToBase64, clearCookie, digest, newSession, putCookie, rateLimit, readCookie, sessionUser, verifyTurnstile } from './security';
+import { expireInactiveAccounts } from './account-policy';
 
 export const auth = new Hono<AppEnv>();
 const usernameSchema = z.string().trim().toLowerCase().min(3).max(40).regex(/^[a-z0-9][a-z0-9_.-]+$/, 'Usa letras, números, puntos o guiones.');
@@ -50,7 +51,8 @@ auth.post('/register/verify', async c => {
   const { credential } = result.registrationInfo;
   const session = await newSession(c, saved.user_id);
   await c.env.DB.batch([
-    c.env.DB.prepare('INSERT INTO users(id,username,created_at) VALUES(?,?,?)').bind(saved.user_id, saved.username, nowSeconds()),
+    c.env.DB.prepare("INSERT INTO users(id,username,created_at,account_status,last_active_at,status_changed_at) VALUES(?,?,?,'pending',?,?)")
+      .bind(saved.user_id, saved.username, nowSeconds(), nowSeconds(), nowSeconds()),
     c.env.DB.prepare('INSERT INTO credentials(id,user_id,public_key,counter,transports) VALUES(?,?,?,?,?)')
       .bind(credential.id, saved.user_id, bytesToBase64(credential.publicKey), credential.counter, JSON.stringify(credential.transports ?? [])),
     session.statement,
@@ -79,9 +81,13 @@ auth.post('/login/verify', async c => {
     credential: { id: credential.id, publicKey: base64ToBytes(credential.public_key), counter: credential.counter },
   }));
   if (!result.verified) throw new HTTPException(400, { message: 'No se pudo verificar el acceso.' });
+  // A late login must not revive an account that already exceeded the inactivity deadline.
+  await expireInactiveAccounts(c.env, nowSeconds(), credential.user_id);
   const session = await newSession(c, credential.user_id);
   await c.env.DB.batch([
     c.env.DB.prepare('UPDATE credentials SET counter=? WHERE id=?').bind(result.authenticationInfo.newCounter, credential.id), session.statement,
+    c.env.DB.prepare("UPDATE users SET last_active_at=? WHERE id=? AND account_status='active' AND last_active_at<=?")
+      .bind(nowSeconds(), credential.user_id, nowSeconds() - 3600),
   ]);
   session.commitCookie();
   return c.json({ ok: true });

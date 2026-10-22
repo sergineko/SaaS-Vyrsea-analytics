@@ -2,7 +2,7 @@
 
 ## Resultado medido
 
-Lighthouse 13.0.0 ejecutado el **22 de octubre de 2026, 17:02 CEST**, sobre la compilación de producción servida localmente en `http://127.0.0.1:8788/`. Perfiles móvil y escritorio, Chrome aislado. Se midió la portada pública; no el dominio actualmente publicado ni todas las pantallas del panel.
+Lighthouse 13.0.0 ejecutado el **22 de octubre de 2026, 18:22 CEST**, sobre la compilación de producción servida localmente en `http://127.0.0.1:8788/`. Perfiles móvil y escritorio, Chrome aislado. Se midió la portada pública; no el dominio actualmente publicado ni todas las pantallas del panel.
 
 | Categoría o métrica | Móvil | Escritorio |
 | --- | ---: | ---: |
@@ -11,7 +11,7 @@ Lighthouse 13.0.0 ejecutado el **22 de octubre de 2026, 17:02 CEST**, sobre la c
 | Buenas prácticas | 100 | 100 |
 | SEO técnico automatizado | 100 | 100 |
 | FCP | 1,4 s | 0,3 s |
-| LCP | 1,5 s | 0,3 s |
+| LCP | 1,4 s | 0,4 s |
 | TBT | 0 ms | 0 ms |
 | CLS | 0 | 0 |
 
@@ -50,6 +50,8 @@ No hay herramientas de escritura. Las entradas son objetos vacíos estrictos y l
 Se verificó en el navegador la detección e invocación de la herramienta pública y de la lectura del espacio de demo, además de pruebas de registro, limpieza y consulta del espacio. La revisión manual cubrió también navegación móvil a 390 píxeles, apertura y cierre del menú, agrupación, plegado y búsqueda. Lighthouse 13 de este entorno **no proporciona una categoría agéntica**; no se ha inventado una puntuación. La API sigue siendo experimental y la web funciona en navegadores que no la exponen.
 
 ## Reproducir
+
+La beta supervisada eleva el total a **119 pruebas** y añade pruebas de aprobación, rol de propietario, inactividad, frontera temporal, reactivación, colas antiguas y sondas en curso. La interfaz de solicitudes y los estados pendiente/suspendido se revisan con una maqueta aislada de datos simulados en `artifacts/account-ui-preview.html`; no concede roles ni modifica cuentas reales. El alta con firmas WebAuthn, D1 y el control de acceso se prueban contra el Worker real con Miniflare. Los paneles de acceso se cargan bajo demanda y no incorporan sus estilos al CSS inicial de la portada. Las puntuaciones de laboratorio de arriba conservan su fecha; no se atribuyen a un despliegue público.
 
 La revisión del panel del 22/10/2026 añadió mantenimiento programado y filtros de investigación. Pasan 92 pruebas, incluidas ventanas solapadas concurrentes, sondas en curso, cancelación, retención e aislamiento. Se revisaron el formulario local, filtros, vacíos y la vista móvil a 390 píxeles, y se invocó la herramienta WebMCP de lectura con mantenimientos de ejemplo. Los estilos nuevos se cargan con el módulo del panel; no se añaden a la hoja CSS inicial de la portada. Las puntuaciones Lighthouse de arriba conservan su fecha de medición y corresponden a la portada pública.
 

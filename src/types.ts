@@ -1,6 +1,6 @@
 import type { PlanLimits } from '../shared/plans';
 import type { MaintenanceWindow } from '../shared/maintenance';
-export interface User { id: string; username: string; createdAt: number }
+export type User = import('../shared/accounts').AccountUser;
 export interface Monitor {
   id: string; userId: string; name: string; url: string; rootDomain: string; paused: boolean;
   status: 'pending' | 'up' | 'degraded' | 'down'; failures: number;

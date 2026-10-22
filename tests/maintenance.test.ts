@@ -20,7 +20,7 @@ beforeAll(async()=>{
   db=await mf.getD1Database('DB') as unknown as D1Database;
   for(const file of readdirSync('migrations').filter(file=>file.endsWith('.sql')).sort())await db.batch(readFileSync(`migrations/${file}`,'utf8').split(/\n(?=CREATE |PRAGMA |ALTER |DROP |INSERT |UPDATE )/).map(sql=>db.prepare(sql.trim())));
   for(const id of ['owner','other']){
-    await db.prepare('INSERT INTO users(id,username,created_at) VALUES(?,?,?)').bind(id,id,now()).run();
+    await db.prepare("INSERT INTO users(id,username,created_at,account_status,last_active_at) VALUES(?,?,?,'active',unixepoch())").bind(id,id,now()).run();
     await db.prepare('INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)').bind(createHash('sha256').update(`maintenance-${id}`).digest('base64'),id,now()+3600).run();
   }
 });
