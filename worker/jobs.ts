@@ -50,8 +50,11 @@ export async function dispatchPending(env: Env, timestamp = nowSeconds()) {
 function slotEligibleColumn() { return 'EXISTS(SELECT 1 FROM users u WHERE u.id=monitors.user_id AND u.monitoring_since<=j.slot)'; }
 
 export async function schedule(env: Env, timestamp = nowSeconds()) {
-  const due = await env.DB.prepare(`SELECT id FROM monitors WHERE paused=0 AND next_check_at<=? AND ${accountEligible(timestamp)} ORDER BY next_check_at LIMIT ${SCHEDULER_BATCH_SIZE}`).bind(timestamp).all<{ id: string }>();
-  await reserveChecks(env, due.results.map(row => row.id), timestamp);
+  // Cron arrival jitter must not move every subsequent deadline. Anchor automatic
+  // cadence to the current minute; manual checks keep their exact cooldown.
+  const tick=Math.floor(timestamp/INTERVAL_SECONDS)*INTERVAL_SECONDS;
+  const due = await env.DB.prepare(`SELECT id FROM monitors WHERE paused=0 AND next_check_at<=? AND ${accountEligible(timestamp)} ORDER BY next_check_at LIMIT ${SCHEDULER_BATCH_SIZE}`).bind(tick).all<{ id: string }>();
+  await reserveChecks(env, due.results.map(row => row.id), tick);
   await dispatchPending(env, timestamp);
 }
 

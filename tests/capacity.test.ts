@@ -74,4 +74,14 @@ describe.sequential('Cost controls on actual Worker/D1', () => {
     }finally{releaseSlow?.();slowGate=undefined;}
     expect((await pending).status).toBe(200);
   });
+  it.each([['free',900],['starter',300],['pro',60]] as const)('keeps %s cadence when Cron arrives earlier in the next cycle',async(plan,interval)=>{
+    const tick=Math.floor(now()/60)*60;
+    await db.batch([db.prepare('DELETE FROM check_jobs'),db.prepare("UPDATE users SET plan_id=?,last_active_at=? WHERE id='owner'").bind(plan,now()),db.prepare("UPDATE monitors SET paused=CASE WHEN id='m7' THEN 0 ELSE 1 END,next_check_at=?,last_slot=0").bind(tick)]);
+    expect((await invoke('schedule',{timestamp:tick+20})).status).toBe(200);
+    expect((await db.prepare("SELECT next_check_at AS next FROM monitors WHERE id='m7'").first())!.next).toBe(tick+interval);
+    expect((await invoke('schedule',{timestamp:tick+interval+5})).status).toBe(200);
+    expect((await db.prepare("SELECT next_check_at AS next FROM monitors WHERE id='m7'").first())!.next).toBe(tick+2*interval);
+    expect((await invoke('schedule',{timestamp:tick+interval+15})).status).toBe(200);
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM check_jobs').first())!.n).toBe(2);
+  });
 });

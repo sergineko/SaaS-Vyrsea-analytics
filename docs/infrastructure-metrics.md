@@ -25,4 +25,6 @@ La lectura previa al cambio del 22-10-2026 encontró backlog cero y cero reinten
 
 Agrupar permite ampliar la beta, pero no justifica eliminar los límites técnicos. Deben comprobarse a la vez operaciones de colas, filas leídas/escritas, CPU, cadencia, backlog y reintentos durante un periodo representativo. El tope actual de diez monitores de clientes se mantiene. Los monitores del propietario no ocupan esas plazas, pero sí consumen cuotas.
 
+El programador automático ancla sus próximas revisiones al minuto actual, evitando que el jitter de llegada del Cron desplace los vencimientos y salte un ciclo. No intenta fabricar comprobaciones de minutos pasados ni repetir una reserva en el mismo slot. Los controles manuales conservan su espera mínima exacta. Las pruebas reproducen una llegada en el segundo 20 seguida de otra en el segundo 5 del ciclo siguiente para Free, Starter y Pro.
+
 Referencias: [métricas de Queues](https://developers.cloudflare.com/queues/observability/metrics/), [precios de Queues](https://developers.cloudflare.com/queues/platform/pricing/), [D1](https://developers.cloudflare.com/d1/observability/metrics-analytics/) y [Workers](https://developers.cloudflare.com/analytics/graphql-api/tutorials/querying-workers-metrics/).
