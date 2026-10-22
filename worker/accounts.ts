@@ -6,6 +6,7 @@ import type { AppEnv, User } from './env';
 import { MAX_MONITORS_TOTAL, nowSeconds } from './env';
 import { rateLimit, sessionUser } from './security';
 import { expireInactiveAccounts } from './account-policy';
+import { estimateCapacity } from '../shared/capacity';
 
 export function denyInactive(c: Context<AppEnv>, user: User) {
   if (user.accountStatus !== 'active') return c.json({ code: user.accountStatus === 'pending' ? 'ACCOUNT_PENDING' : 'ACCOUNT_SUSPENDED',
@@ -54,9 +55,15 @@ owner.get('/accounts', async c => {
       ORDER BY CASE WHEN u.account_status='pending' OR u.review_requested_at IS NOT NULL THEN 0 ELSE 1 END,u.created_at DESC LIMIT 100`),
     c.env.DB.prepare(`SELECT (SELECT COUNT(*) FROM monitors) AS monitors,
       (SELECT COUNT(*) FROM check_jobs) AS queuedChecks,
-      (SELECT COUNT(*) FROM users WHERE account_status='active') AS activeAccounts`),
+      (SELECT COUNT(*) FROM users WHERE account_status='active') AS activeAccounts,
+      COALESCE(SUM(CASE WHEN m.paused=0 AND u.account_status='active' THEN 86400 / p.interval_seconds ELSE 0 END),0) AS checksPerDay,
+      COALESCE(SUM(CASE WHEN m.paused=0 AND u.account_status='active' THEN 1 ELSE 0 END),0) AS activeMonitors,
+      COALESCE(MAX(CASE WHEN m.paused=0 AND u.account_status='active' THEN 86400 / p.interval_seconds ELSE 0 END),0) AS fastestChecksPerDay
+      FROM monitors m JOIN users u ON u.id=m.user_id JOIN plan_limits p ON p.id=u.plan_id`),
   ]);
-  return c.json({ accounts: accounts.results, usage: { ...(usage.results[0] as Record<string, number>), monitorLimit: MAX_MONITORS_TOTAL, accountLimit: 100 }, inactivityDays: 14 });
+  const measured = usage.results[0] as Record<string, number>;
+  return c.json({ accounts: accounts.results, usage: { ...measured, monitorLimit: MAX_MONITORS_TOTAL, accountLimit: 100 },
+    capacity: estimateCapacity(measured.checksPerDay, measured.activeMonitors, measured.fastestChecksPerDay), inactivityDays: 14 });
 });
 owner.post('/accounts/:id/:action', async c => {
   z.object({}).strict().parse(await c.req.json());

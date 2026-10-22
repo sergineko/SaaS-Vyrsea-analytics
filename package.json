@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "smoke:probe": "node scripts/smoke-probe.mjs",
+    "benchmark:storage": "node scripts/benchmark-storage.mjs",
     "db:local": "wrangler d1 migrations apply DB --local",
     "db:remote": "wrangler d1 migrations apply DB --remote",
     "deploy": "node scripts/deploy.mjs",

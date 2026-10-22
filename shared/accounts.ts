@@ -8,5 +8,6 @@ export interface OwnerAccount extends Omit<AccountUser, 'isOwner'> { isOwner: nu
 export interface OwnerAccountsData {
   accounts: OwnerAccount[];
   usage: { monitors: number; monitorLimit: number; queuedChecks: number; activeAccounts: number; accountLimit: number };
+  capacity?: ReturnType<typeof import('./capacity').estimateCapacity>;
   inactivityDays: number;
 }

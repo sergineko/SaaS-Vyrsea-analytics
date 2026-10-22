@@ -27,7 +27,7 @@ flowchart LR
 | Identidad | SimpleWebAuthn, passkeys con verificación de usuario obligatoria y sesiones HttpOnly |
 | Formularios | Turnstile en registro de producción, validado en servidor |
 | Planificador | Un Cron por minuto, hasta diez monitores vencidos por ejecución |
-| Transporte | Queue `vyrsea-checks`, un mensaje con hasta tres monitores; un consumidor concurrente |
+| Transporte | Queue `vyrsea-checks`, un mensaje con hasta cuatro monitores; hasta tres consumidores concurrentes |
 | Fallos de entrega | Tres reintentos con 60 segundos de retraso, DLQ y outbox recuperable |
 | Retención | El mismo Cron por minuto ejecuta limpieza a las 03:17 UTC, eliminaciones acotadas por tabla |
 | Publicación | Wrangler, Static Assets y backend en el mismo Worker; rutas inexistentes devuelven 404 |
@@ -39,12 +39,12 @@ flowchart LR
 
 1. Cron consulta el índice `(paused, next_check_at)`. Los slots de idempotencia tienen resolución de un minuto; la próxima reserva respeta la frecuencia de la cuenta (Free 15 min, Starter 5 min, Pro / Agencia y Business 1 min).
 2. Una transacción D1 agrupa las reservas de hasta diez monitores, añade el trabajo a `check_jobs` y avanza la próxima ejecución. La reserva evita duplicados y también se aplica al botón manual.
-3. El despachador agrupa los mensajes con `sendBatch` y envía mensajes con hasta tres trabajos y marca su entrega **después** de que Queues acepte el mensaje. Un error de envío deja el outbox pendiente para el siguiente minuto.
+3. El despachador agrupa los mensajes con `sendBatch` y envía mensajes con hasta cuatro trabajos y marca su entrega **después** de que Queues acepte el mensaje. Un error de envío deja el outbox pendiente para el siguiente minuto.
 4. El consumidor comprueba que el monitor siga existiendo y activo, y que el slot no se haya procesado. Valida URL y DNS A/AAAA y solicita los encabezados HTTP. Cada salto de redirección vuelve a validarse; cancela el cuerpo para no descargarlo.
 5. Una transacción D1 inserta el resultado, actualiza el agregado horario, abre o cierra incidencias, genera alertas, actualiza `last_slot` y elimina el trabajo pendiente. Todas las escrituras están protegidas por el slot anterior. Una repetición no duplica estadísticas ni alertas.
 6. Una reserva entregada que siga sin finalizar después de quince minutos puede reenviarse desde el outbox. Una entrega antigua se ignora si ya se registró un slot posterior. No se fabrican comprobaciones de los periodos perdidos.
 
-El `max_concurrency: 1` y `max_batch_size: 1` mantienen un consumo predecible. Los tres monitores de cada mensaje se procesan secuencialmente. Con cuatro solicitudes HTTP por monitor como máximo y dos consultas DNS por salto, hay hasta 36 peticiones de red por mensaje, más las llamadas D1, por debajo de las 50 subsolicitudes del plan Free. No aumentar tamaños sin recalcular este presupuesto y medir CPU.
+El `max_concurrency: 3` y `max_batch_size: 1` permiten procesar los tres mensajes del máximo actual de diez monitores sin serializar las esperas de red entre mensajes. Los cuatro monitores de cada mensaje se procesan secuencialmente: hasta 48 peticiones externas y 40 sentencias D1 por invocación. Los límites externos e internos son distintos; el límite D1 Free sigue siendo 50 consultas. No aumentar tamaños sin recalcular este presupuesto y medir CPU. Consulta el [modelo de coste, límites actuales y evolución a 100/1.000 cuentas](capacity.md).
 
 ## Estados y estadísticas
 

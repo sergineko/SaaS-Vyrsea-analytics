@@ -56,6 +56,14 @@ beforeEach(async () => {
 afterAll(async () => { release?.(); await mf?.dispose(); });
 
 describe.sequential('Owner approval and inactive Free accounts on actual Worker/D1', () => {
+  it('projects cadence costs without counting paused or suspended monitoring', async () => {
+    await monitor('owner','paid'); await monitor('free','live'); await monitor('free','paused',1);
+    const before=await (await api('/owner/accounts')).json() as OwnerAccountsData;
+    expect(before.capacity).toMatchObject({checksPerDay:1536,queueOperationsMin:4320,queueOperationsMax:4608});
+    expect((await api('/owner/accounts/free/suspend','POST')).status).toBe(200);
+    const after=await (await api('/owner/accounts')).json() as OwnerAccountsData;
+    expect(after.capacity).toMatchObject({checksPerDay:1440,queueOperationsMin:4320,queueOperationsMax:4320});
+  });
   it('registers a passkey as pending with no owner or paid privileges', async () => {
     const registered = await register();
     expect(registered.user).toMatchObject({accountStatus: 'pending', isOwner: false, planId: 'free'});
@@ -166,7 +174,7 @@ describe.sequential('Owner approval and inactive Free accounts on actual Worker/
     expect((await api('/dashboard', 'GET', undefined, cookie)).status).toBe(200);
   });
   it('rejects oversized or malformed Queue batches before any external requests', async () => {
-    for (const jobs of [[], [{monitorId:'monitor',slot:'0'}], Array.from({length:4},(_,i)=>({monitorId:`monitor-${i}`,slot:now()})), [{monitorId:'monitor',slot:now()},{monitorId:'monitor',slot:now()}]]) {
+    for (const jobs of [[], [{monitorId:'monitor',slot:'0'}], Array.from({length:5},(_,i)=>({monitorId:`monitor-${i}`,slot:now()})), [{monitorId:'monitor',slot:now()},{monitorId:'monitor',slot:now()}]]) {
       expect((await test('consume', {jobs})).status).toBe(500);
     }
     expect(targetCalls).toBe(0);

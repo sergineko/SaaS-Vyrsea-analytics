@@ -2,8 +2,10 @@ import type { CheckJob, Env, QueuePayload } from './env';
 import { INTERVAL_SECONDS, nowSeconds } from './env';
 import { probe, type ProbeResult } from './probe';
 import { accountEligible, expireInactiveAccounts, slotEligible } from './account-policy';
+import { JOBS_PER_MESSAGE, SCHEDULER_BATCH_SIZE } from '../shared/capacity';
+import { retentionCandidatesSQL } from './retention';
 
-export const JOBS_PER_MESSAGE = 3;
+export { JOBS_PER_MESSAGE };
 
 export async function reserveCheck(env: Env, monitorId: string, timestamp = nowSeconds()) {
   return (await reserveChecks(env, [monitorId], timestamp))[0];
@@ -48,7 +50,7 @@ export async function dispatchPending(env: Env, timestamp = nowSeconds()) {
 function slotEligibleColumn() { return 'EXISTS(SELECT 1 FROM users u WHERE u.id=monitors.user_id AND u.monitoring_since<=j.slot)'; }
 
 export async function schedule(env: Env, timestamp = nowSeconds()) {
-  const due = await env.DB.prepare(`SELECT id FROM monitors WHERE paused=0 AND next_check_at<=? AND ${accountEligible(timestamp)} ORDER BY next_check_at LIMIT 10`).bind(timestamp).all<{ id: string }>();
+  const due = await env.DB.prepare(`SELECT id FROM monitors WHERE paused=0 AND next_check_at<=? AND ${accountEligible(timestamp)} ORDER BY next_check_at LIMIT ${SCHEDULER_BATCH_SIZE}`).bind(timestamp).all<{ id: string }>();
   await reserveChecks(env, due.results.map(row => row.id), timestamp);
   await dispatchPending(env, timestamp);
 }
@@ -61,7 +63,7 @@ export async function recordResult(env: Env, job: CheckJob, result: ProbeResult,
     OR (w.starts_at<=? AND MIN(w.ends_at,COALESCE(w.cancelled_at,w.ends_at))>?)))`;
   const maintenanceTimes = [job.slot,job.slot,timestamp,timestamp] as const;
   // A single D1 transaction: the monitor's last_slot changes LAST, guarding every statement.
-  // Queue consumers are serialized; the slot guard additionally makes replay harmless.
+  // D1 batches are atomic: concurrent duplicate deliveries still cannot write a slot twice.
   await env.DB.batch([
     // A planned gap breaks consecutive failures; an already-open incident remains open.
     env.DB.prepare(`UPDATE monitors SET failures=CASE WHEN status='down' THEN failures ELSE 0 END,
@@ -125,10 +127,7 @@ export async function cleanup(env: Env, timestamp = nowSeconds()) {
   // Retention follows each account; bounded deletes limit work after long outages.
   const historyDays = `CASE WHEN u.plan_id='business' THEN u.history_days_limit ELSE p.history_days END`;
   for (const [table, field, limit] of [['checks','checked_at',3500], ['hourly_stats','hour',1000], ['incidents','resolved_at',500]] as const) {
-    await env.DB.prepare(`DELETE FROM ${table} WHERE rowid IN (
-      SELECT x.rowid FROM ${table} x JOIN monitors m ON m.id=x.monitor_id
-      JOIN users u ON u.id=m.user_id JOIN plan_limits p ON p.id=u.plan_id
-      WHERE x.${field} < ? - (${historyDays}) * 86400 LIMIT ${limit})`).bind(timestamp).run();
+    await env.DB.prepare(`DELETE FROM ${table} WHERE rowid IN (${retentionCandidatesSQL(table, field, limit)})`).bind(timestamp).run();
   }
   await env.DB.prepare(`DELETE FROM notifications WHERE rowid IN (
     SELECT n.rowid FROM notifications n JOIN users u ON u.id=n.user_id JOIN plan_limits p ON p.id=u.plan_id

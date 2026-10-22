@@ -31,6 +31,11 @@ export default {
         await dispatchPending({ ...env, CHECK_QUEUE: { sendBatch: async () => { throw new Error('Simulated queue outage'); } } as unknown as Env['CHECK_QUEUE'] });
       } catch { return Response.json({ failed: true }, { status: 503 }); }
     }
+    if (new URL(request.url).pathname === '/__test/dispatch-capture') {
+      const messages: unknown[] = [];
+      await dispatchPending({ ...env, CHECK_QUEUE: { sendBatch: async (batch: unknown[]) => { messages.push(...batch); } } as unknown as Env['CHECK_QUEUE'] });
+      return Response.json({messages});
+    }
     return worker.fetch(request, env, ctx);
   },
 };

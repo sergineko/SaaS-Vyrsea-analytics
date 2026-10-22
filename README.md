@@ -46,7 +46,7 @@ Con la configuración de origen local, `pnpm run preview` solo sirve para revisa
 
 El MVP está publicado en [vyrsea.com](https://vyrsea.com), con D1, Queues, Turnstile y aprobación obligatoria. Algunos resolutores pueden conservar la antigua dirección durante la propagación DNS. No registres cuentas reales en `workers.dev`: las passkeys y escrituras están vinculadas al origen final `https://vyrsea.com`.
 
-Los recursos remotos están separados con nombres `vyrsea-*`: `vyrsea-db`, `vyrsea-checks` y `vyrsea-dead-letters`. Se ha verificado Workers Free en la cuenta. Las seis migraciones están aplicadas en D1 remoto. La configuración pública de producción está en `wrangler.production.jsonc`; `wrangler.jsonc` conserva el entorno local. El secreto de Turnstile se guarda como Worker Secret, nunca en Git.
+Los recursos remotos están separados con nombres `vyrsea-*`: `vyrsea-db`, `vyrsea-checks` y `vyrsea-dead-letters`. Se ha verificado Workers Free en la cuenta. El flujo remoto aplica las migraciones numeradas antes de publicar. La configuración pública de producción está en `wrangler.production.jsonc`; `wrangler.jsonc` conserva el entorno local. El secreto de Turnstile se guarda como Worker Secret, nunca en Git.
 
 La zona DNS usa Cloudflare y la ruta `vyrsea.com/*` entrega el Worker y sus Static Assets. El registro A raíz está proxied y apunta a `192.0.2.1`: es un destino de documentación sin servidor de origen, por lo que no debe desactivarse el proxy. Las reglas de zona redirigen `www` al dominio raíz y HTTP a HTTPS, conservando ruta y consulta. La antigua entrada `/es` redirige a `/`; las demás rutas inexistentes devuelven 404. Los registros de correo de IONOS se conservan. Consulta la [operación del dominio](docs/operations.md#dominio-publicado).
 
@@ -71,7 +71,7 @@ La configuración reduce consumo; **no promete capacidad ilimitada ni sustituye 
 | Recurso | Diseño del prototipo |
 | --- | --- |
 | Sondas | 10 monitores Free × 96/día = 960/día como carga base |
-| Queues | Mensajes con hasta 3 monitores; aprox. 1.152–2.880 operaciones/día para diez monitores Free sin reintentos, según agrupación |
+| Queues | Mensajes con hasta 4 monitores y hasta 3 consumidores; aprox. 864–2.880 operaciones/día para diez monitores Free sin reintentos, según horarios y agrupación |
 | Manuales | Respetan el intervalo del plan (Free: 15 minutos); no se suman a una comprobación ya reservada |
 | D1 | Consultas indexadas, ventanas de histórico autorizadas por cuenta, paginación, agregados por hora y limpieza diaria acotada |
 | CPU | Sin SSR ni hash de contraseñas; trabajo de red acotado. Validar los 10 ms de CPU en el entorno remoto |
@@ -116,6 +116,7 @@ No ejecutes dos procesos Wrangler sobre el mismo directorio de persistencia. El 
 
 - [Arquitectura, modelo de datos y decisiones](docs/architecture.md)
 - [Seguridad y operación](docs/operations.md)
+- [Coste, prueba con 100.000 muestras y evolución a 1.000 cuentas](docs/capacity.md)
 - [Alcance del documento y siguientes etapas](docs/roadmap.md)
 - [Modelo de planes y mejoras de producto](docs/product-plan.md)
 - [Mantenimiento e investigación de incidencias](docs/maintenance.md)
