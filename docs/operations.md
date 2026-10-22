@@ -25,9 +25,19 @@ Los recursos estáticos incluyen CSP, protección de framing, política de refer
 - `.dev.vars`, `.env`, `.wrangler`, dependencias y artefactos de pruebas están ignorados por Git.
 - El `database_id` no es una credencial, pero debe corresponder al recurso de tu cuenta.
 - Las passkeys están vinculadas al hostname. No registrar usuarios reales en un dominio que se vaya a sustituir sin preparar una migración de credenciales.
-- `PUBLIC_SITE_URL` fija el origen canónico `https://vyrsea.com`; no configura DNS ni publica por sí mismo. El sitio actual del dominio necesita una migración deliberada de contenido y URLs antes de reemplazarlo.
+- `PUBLIC_SITE_URL` fija el origen canónico `https://vyrsea.com`; no configura DNS ni publica por sí mismo. La ruta de producción se declara por separado en `wrangler.production.jsonc`.
 
 La recuperación de cuentas, gestión de passkeys adicionales, revocación de todas las sesiones y eliminación de cuenta completa quedan pendientes. Guarda la credencial en un gestor sincronizado y no emplees cuentas importantes hasta tener recuperación operativa. Un fallo de WebAuthn no debe resolverse desactivando la verificación de origen o de usuario.
+
+## Dominio publicado
+
+La zona `vyrsea.com` está activa en Cloudflare Free con nameservers `jay.ns.cloudflare.com` y `ziggy.ns.cloudflare.com`. El registro A raíz está **proxied**, con destino `192.0.2.1`, y la ruta `vyrsea.com/*` sirve `vyrsea-monitor` y sus Static Assets sin un servidor de origen. No cambies el registro raíz a DNS only: ese destino no aloja una web. La configuración usa una ruta de zona, no un Custom Domain de Workers.
+
+Las reglas `vyrsea-www-to-apex` y `vyrsea-http-to-https` hacen redirecciones 301 y conservan ruta y parámetros. `public/_redirects` lleva `/es` y `/es/` a la portada. No se redirigen todos los errores a la portada. Se han verificado TLS, `/api/health` y estas redirecciones en el extremo de Cloudflare; durante la propagación un resolutor con caché antigua puede seguir llegando a Vercel.
+
+El correo continúa en IONOS con sus MX, SPF y DKIM. La configuración de reenvíos se administra allí y no requiere activar Email Routing de Cloudflare. Domain Guard se ha reactivado tras cambiar los nameservers. La web anterior de Vercel debe conservarse hasta comprobar la propagación; su retirada es una acción separada de publicar el Worker.
+
+El repositorio solo contiene configuración pública. Las exportaciones DNS previas, datos operativos y credenciales permanecen fuera de Git. No copies la credencial OAuth local de Wrangler a un sistema de CI. Una integración de despliegue continuo necesita su propio token con los permisos imprescindibles para publicar, administrar la ruta y aplicar migraciones D1.
 
 ## Operación diaria
 

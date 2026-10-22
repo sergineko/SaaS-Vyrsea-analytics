@@ -44,9 +44,11 @@ Con la configuración de origen local, `pnpm run preview` solo sirve para revisa
 
 ## Desplegar en tu Cloudflare Free
 
-El Worker ya se ha publicado en [vyrsea-monitor.sergiotech.workers.dev](https://vyrsea-monitor.sergiotech.workers.dev), con D1, Queues, Turnstile y aprobación obligatoria. El dominio final **vyrsea.com** está en migración DNS. No registres cuentas reales en `workers.dev`: las passkeys y escrituras están vinculadas al origen final `https://vyrsea.com`.
+El MVP está publicado en [vyrsea.com](https://vyrsea.com), con D1, Queues, Turnstile y aprobación obligatoria. Algunos resolutores pueden conservar la antigua dirección durante la propagación DNS. No registres cuentas reales en `workers.dev`: las passkeys y escrituras están vinculadas al origen final `https://vyrsea.com`.
 
 Los recursos remotos están separados con nombres `vyrsea-*`: `vyrsea-db`, `vyrsea-checks` y `vyrsea-dead-letters`. Se ha verificado Workers Free en la cuenta. Las seis migraciones están aplicadas en D1 remoto. La configuración pública de producción está en `wrangler.production.jsonc`; `wrangler.jsonc` conserva el entorno local. El secreto de Turnstile se guarda como Worker Secret, nunca en Git.
+
+La zona DNS usa Cloudflare y la ruta `vyrsea.com/*` entrega el Worker y sus Static Assets. El registro A raíz está proxied y apunta a `192.0.2.1`: es un destino de documentación sin servidor de origen, por lo que no debe desactivarse el proxy. Las reglas de zona redirigen `www` al dominio raíz y HTTP a HTTPS, conservando ruta y consulta. La antigua entrada `/es` redirige a `/`; las demás rutas inexistentes devuelven 404. Los registros de correo de IONOS se conservan. Consulta la [operación del dominio](docs/operations.md#dominio-publicado).
 
 Para publicar cambios desde un terminal ya autenticado:
 

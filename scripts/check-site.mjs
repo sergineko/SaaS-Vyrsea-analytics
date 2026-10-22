@@ -19,5 +19,6 @@ assert.ok(readFileSync('dist/sitemap.xml','utf8').includes('<loc>https://vyrsea.
 assert.ok(readFileSync('dist/llms.txt','utf8').includes('No hay pagos ni correos activos'));
 const api=JSON.parse(readFileSync('dist/openapi.json','utf8'));assert.ok(api.paths['/api/dashboard'].get.security);
 assert.ok(readFileSync('dist/404.html','utf8').includes('noindex,follow'));
+assert.ok(readFileSync('dist/_redirects','utf8').includes('/es / 301'),'Keep the previous Spanish entry point usable during migration');
 assert.equal(JSON.parse(readFileSync('wrangler.jsonc','utf8')).assets.not_found_handling,'404-page');
 console.log('Verificados HTML sin JavaScript, marca, cuotas, canonical, JSON-LD, robots, sitemap, 404 y documentación para agentes.');

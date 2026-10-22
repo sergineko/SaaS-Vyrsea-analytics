@@ -14,7 +14,11 @@ if (!existsSync(config)) throw new Error(`Falta ${config}; no se modifica ningun
 const sql = `UPDATE users SET is_owner=1,account_status='active',plan_id='business',domain_limit=10,monitor_limit=10,history_days_limit=90,
   last_active_at=unixepoch(),status_changed_at=unixepoch(),suspension_reason=NULL,review_requested_at=NULL
   ,monitoring_since=(CAST(unixepoch()/60 AS INTEGER)+1)*60
-  WHERE id='${id}' RETURNING id,username,account_status,plan_id,is_owner,domain_limit,monitor_limit,history_days_limit;`;
+  WHERE id='${id}' RETURNING id,username,account_status,plan_id,is_owner,domain_limit,monitor_limit,history_days_limit;
+  DELETE FROM check_jobs WHERE monitor_id IN (SELECT id FROM monitors WHERE user_id='${id}');
+  UPDATE monitors SET next_check_at=MAX(COALESCE(last_checked_at,0)+60,unixepoch()+60),
+    failures=CASE WHEN status='down' THEN failures ELSE 0 END,status=CASE WHEN status='degraded' THEN 'pending' ELSE status END
+    WHERE user_id='${id}';`;
 const result = spawnSync(process.execPath, [resolve('node_modules/wrangler/bin/wrangler.js'), 'd1', 'execute', 'DB', remote ? '--remote' : '--local', '--config', config, '--command', sql, '--json'], {
   encoding: 'utf8', env: { ...process.env, XDG_CONFIG_HOME: resolve('.wrangler/config'), WRANGLER_SEND_METRICS: 'false' },
 });

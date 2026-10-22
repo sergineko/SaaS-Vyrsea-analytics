@@ -59,8 +59,8 @@
   "preview_urls": false,
   "routes": [
     {
-      "pattern": "vyrsea.com",
-      "custom_domain": true
+      "pattern": "vyrsea.com/*",
+      "zone_id": "f645d506fbcaa010ce7ba080317cb453"
     }
   ]
 }
