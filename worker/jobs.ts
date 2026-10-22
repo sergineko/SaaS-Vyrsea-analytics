@@ -10,7 +10,7 @@ export { JOBS_PER_MESSAGE };
 export async function reserveCheck(env: Env, monitorId: string, timestamp = nowSeconds()) {
   return (await reserveChecks(env, [monitorId], timestamp))[0];
 }
-async function reserveChecks(env: Env, monitorIds: string[], timestamp: number) {
+async function reserveChecks(env: Env, monitorIds: string[], timestamp: number, cadenceBase = timestamp) {
   if (!monitorIds.length) return [];
   const slot = Math.floor(timestamp / INTERVAL_SECONDS) * INTERVAL_SECONDS;
   const result = await env.DB.batch(monitorIds.flatMap(monitorId => [
@@ -25,7 +25,7 @@ async function reserveChecks(env: Env, monitorIds: string[], timestamp: number) 
       .bind(slot, slot, timestamp, monitorId, timestamp, slot),
     env.DB.prepare(`UPDATE monitors SET next_check_at=?+(SELECT p.interval_seconds FROM plan_limits p JOIN users u ON u.plan_id=p.id WHERE u.id=monitors.user_id) WHERE id=? AND paused=0 AND next_check_at<=?
       AND EXISTS(SELECT 1 FROM check_jobs WHERE id=monitors.id || ':' || CAST(? AS INTEGER))`)
-      .bind(timestamp, monitorId, timestamp, slot),
+      .bind(cadenceBase, monitorId, timestamp, slot),
   ]));
   return monitorIds.map((_, index) => result[index * 3 + 1].meta.changes > 0);
 }
@@ -53,8 +53,8 @@ export async function schedule(env: Env, timestamp = nowSeconds()) {
   // Cron arrival jitter must not move every subsequent deadline. Anchor automatic
   // cadence to the current minute; manual checks keep their exact cooldown.
   const tick=Math.floor(timestamp/INTERVAL_SECONDS)*INTERVAL_SECONDS;
-  const due = await env.DB.prepare(`SELECT id FROM monitors WHERE paused=0 AND next_check_at<=? AND ${accountEligible(timestamp)} ORDER BY next_check_at LIMIT ${SCHEDULER_BATCH_SIZE}`).bind(tick).all<{ id: string }>();
-  await reserveChecks(env, due.results.map(row => row.id), tick);
+  const due = await env.DB.prepare(`SELECT id FROM monitors WHERE paused=0 AND next_check_at<=? AND ${accountEligible(timestamp)} ORDER BY next_check_at LIMIT ${SCHEDULER_BATCH_SIZE}`).bind(timestamp).all<{ id: string }>();
+  await reserveChecks(env, due.results.map(row => row.id), timestamp, tick);
   await dispatchPending(env, timestamp);
 }
 
