@@ -6,6 +6,7 @@ export interface Monitor {
   status: 'pending' | 'up' | 'degraded' | 'down'; failures: number;
   lastCheckedAt: number | null; lastStatusCode: number | null; lastResponseMs: number | null;
   lastError: string | null; nextCheckAt: number; createdAt: number;
+  probeMask?: number;
 }
 export interface HourStat { monitorId: string; hour: number; total: number; successful: number; totalMs: number }
 export interface Incident { id: string; monitorId: string; monitorName: string; openedAt: number; resolvedAt: number | null; reason: string }

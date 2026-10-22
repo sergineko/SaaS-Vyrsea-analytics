@@ -14,6 +14,7 @@ import { accountPlan, backfillDomains } from './plans';
 import { intervalLabel } from '../shared/plans';
 import { maintenance } from './maintenance';
 import { denyInactive } from './accounts';
+import {statusPages} from './status-pages';
 
 export const api = new Hono<AppEnv>();
 api.use('*', async (c, next) => {
@@ -44,8 +45,11 @@ api.get('/dashboard', async c => {
   const since = Math.max(nowSeconds() - limits.historyDays * 86400, Math.floor(nowSeconds() / 3600) * 3600 - (days * 24 - 1) * 3600);
   const [items, stats, incidents, notifications, windows] = await Promise.all([
     drizzle(c.env.DB).select().from(monitors).where(eq(monitors.userId, userId)).all(),
-    c.env.DB.prepare(`SELECT h.monitor_id AS monitorId,h.hour,h.total,h.successful,h.total_ms AS totalMs
-      FROM hourly_stats h JOIN monitors m ON m.id=h.monitor_id WHERE m.user_id=? AND h.hour>=? ORDER BY h.hour`).bind(userId, since).all(),
+    c.env.DB.prepare(`SELECT h.monitor_id AS monitorId,?+CAST((h.hour-?)/? AS INTEGER)*? AS hour,
+      SUM(h.total) AS total,SUM(h.successful) AS successful,SUM(h.total_ms) AS totalMs
+      FROM hourly_stats h JOIN monitors m ON m.id=h.monitor_id WHERE m.user_id=? AND h.hour>=?
+      GROUP BY h.monitor_id,CAST((h.hour-?)/? AS INTEGER) ORDER BY hour`)
+      .bind(since,since,days*3600,days*3600,userId,since,since,days*3600).all(),
     c.env.DB.prepare(`SELECT i.id,i.monitor_id AS monitorId,m.name AS monitorName,i.opened_at AS openedAt,i.resolved_at AS resolvedAt,i.reason
       FROM incidents i JOIN monitors m ON m.id=i.monitor_id WHERE m.user_id=? AND (i.resolved_at IS NULL OR i.resolved_at>=?) ORDER BY i.opened_at DESC LIMIT 50`).bind(userId, since).all(),
     c.env.DB.prepare(`SELECT id,monitor_id AS monitorId,kind,message,created_at AS createdAt,read_at AS readAt
@@ -59,6 +63,24 @@ api.get('/dashboard', async c => {
     maintenance: windows.results, limits, windowDays: days, activeProbeProviders: ['cloudflare'], multiProbeActive: false, serverTime: nowSeconds() });
 });
 api.route('/',maintenance);
+api.route('/status-pages',statusPages);
+api.get('/monitors/:id/availability',async c=>{
+  const monitor=await owned(c,c.req.param('id')),plan=await accountPlan(c.env,c.get('user').id),now=nowSeconds();
+  const hour=Math.floor(now/3600)*3600,earliest=Math.ceil((now-plan.historyDays*86400)/3600)*3600;
+  const days=c.req.query('days');let from:number,to=now;
+  if(days!==undefined){const n=z.coerce.number().int().min(1).max(365).parse(days);if(n>plan.historyDays)throw new HTTPException(403,{message:`Tu plan conserva ${plan.historyDays} días.`});from=Math.max(earliest,hour-(n*24-1)*3600);}
+  else{from=z.coerce.number().int().min(0).parse(c.req.query('from'));to=z.coerce.number().int().min(0).parse(c.req.query('to'));if(from<earliest)throw new HTTPException(403,{message:`El inicio debe estar dentro de los ${plan.historyDays} días de tu plan.`});if(from%3600||to%3600||from>=to||from>now||to>now+3600)throw new HTTPException(400,{message:'Elige un intervalo válido, con precisión de una hora y sin fechas futuras.'});to=Math.min(to,now);}
+  const last24From=hour-23*3600;
+  const rows=await c.env.DB.prepare('SELECT monitor_id AS monitorId,hour,total,successful,total_ms AS totalMs FROM hourly_stats WHERE monitor_id=? AND hour>=? AND hour<=? ORDER BY hour').bind(monitor.id,Math.min(last24From,from),hour).all();
+  return c.json({from,to,serverTime:now,stats:rows.results.filter(row=>Number(row.hour)>=from&&Number(row.hour)<to),last24:rows.results.filter(row=>Number(row.hour)>=last24From),last24From});
+});
+api.patch('/monitors/:id/probes',async c=>{
+  const monitor=await owned(c,c.req.param('id')),plan=await accountPlan(c.env,c.get('user').id);
+  if(!plan.advancedDashboard)throw new HTTPException(403,{message:'La selección de sondas requiere Pro / Agencia o Business.'});
+  const {probeMask}=z.object({probeMask:z.number().int().min(1).max(7)}).strict().parse(await c.req.json());
+  if(!(probeMask&1))throw new HTTPException(409,{message:'Mantén Cloudflare activa mientras AWS y Google Cloud no estén conectadas. Debe quedar al menos una sonda operativa.'});
+  await c.env.DB.prepare('UPDATE monitors SET probe_mask=? WHERE id=?').bind(probeMask,monitor.id).run();return c.json({ok:true,probeMask,activeProbeProviders:['cloudflare']});
+});
 api.post('/monitors', async c => {
   const input = monitorInput.parse(await c.req.json());
   const url = target(input.url);

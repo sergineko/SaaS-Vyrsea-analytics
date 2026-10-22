@@ -11,6 +11,7 @@ import { isLocal, sessionUser } from './security';
 import { BILLING, PLAN_CATALOG } from '../shared/plans';
 import { account, owner } from './accounts';
 import { runRetentionJob } from './retention-job';
+import {publicStatus} from './status-pages';
 
 const app = new Hono<AppEnv>();
 app.use('/api/*', bodyLimit({ maxSize: 16384, onError: c => c.json({ error: 'Solicitud demasiado grande.' }, 413) }));
@@ -36,6 +37,7 @@ app.route('/api/auth', auth);
 app.route('/api/auth', credentialSecurity);
 app.route('/api/account', account);
 app.route('/api/owner', owner);
+app.route('/api/public/status',publicStatus);
 app.route('/api', api);
 app.notFound(c => c.req.path === '/api' || c.req.path.startsWith('/api/')
   ? c.json({ error: 'Ruta no encontrada.' }, 404)
@@ -49,6 +51,7 @@ app.onError((error, c) => {
   if (/MONITOR_CAPACITY/.test(detail)) return c.json({ error: 'Has alcanzado el límite de monitores de tu plan. Free incluye 1 dominio y 2 monitores en total; los pausados también cuentan.' }, 409);
   if (/DUPLICATE_MONITOR/.test(detail)) return c.json({ error: 'Ya tienes un monitor para esta URL.' }, 409);
   if (/CREDENTIAL_CAPACITY/.test(detail)) return c.json({ error: 'Ya tienes cinco passkeys. Puedes recuperar el acceso con un código para sustituirlas.' }, 409);
+  if (/STATUS_PAGE_CAPACITY/.test(detail)) return c.json({error:'La beta permite cinco páginas de estado por cuenta.'},409);
   if (/GLOBAL_CAPACITY/.test(detail)) return c.json({ error: 'La beta ha alcanzado sus 10 monitores de clientes compartidos. Este límite técnico se aplica además de las cuotas de cada plan.' }, 409);
   if (/CUSTOM_PLAN_REQUIRED/.test(detail)) return c.json({ error: 'El plan Business necesita cuotas personalizadas configuradas por contrato.' }, 409);
   if (/MAINTENANCE_OVERLAP/.test(detail)) return c.json({ error: 'Este horario coincide con otro mantenimiento del monitor.' }, 409);

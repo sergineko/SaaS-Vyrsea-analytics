@@ -1,12 +1,34 @@
 // Test-only entry point. Production Wrangler bundles worker/index.ts directly.
 import worker from '../worker/index';
 import { cleanup, consume, dispatchPending, recordResult, reserveCheck, schedule } from '../worker/jobs';
-import type { CheckJob, Env } from '../worker/env';
+import type { CheckJob, Env,QueuePayload } from '../worker/env';
 import type { ProbeResult } from '../worker/probe';
 import { runRetentionJob } from '../worker/retention-job';
 export default {
   ...worker,
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    if (new URL(request.url).pathname === '/__test/storage-cycle') {
+      const {timestamp}=await request.json() as {timestamp:number};
+      const samples:{sql:string;writes:number;reads:number}[]=[];
+      const statements=new WeakMap<object,string>();
+      const capture=(sql:string,result:D1Result)=>{samples.push({sql:sql.replace(/\s+/g,' ').slice(0,90),writes:result.meta.rows_written??0,reads:result.meta.rows_read??0});return result;};
+      function wrap(statement:D1PreparedStatement,sql:string):D1PreparedStatement {
+        const proxy=new Proxy(statement,{get(target,property){
+          if(property==='bind')return (...values:unknown[])=>wrap(target.bind(...values),sql);
+          if(property==='run'||property==='all')return async()=>capture(sql,await target[property]());
+          const value=Reflect.get(target,property);return typeof value==='function'?value.bind(target):value;
+        }});statements.set(proxy,sql);return proxy;
+      }
+      const messages:QueuePayload[]=[];
+      const instrumented={...env,DB:new Proxy(env.DB,{get(target,property){
+        if(property==='prepare')return (sql:string)=>wrap(target.prepare(sql),sql);
+        if(property==='batch')return async(items:D1PreparedStatement[])=>{const results=await target.batch(items);results.forEach((result,index)=>capture(statements.get(items[index])??'batch',result));return results;};
+        const value=Reflect.get(target,property);return typeof value==='function'?value.bind(target):value;
+      }}),CHECK_QUEUE:{sendBatch:async(batch:MessageSendRequest<QueuePayload>[])=>{messages.push(...batch.map(item=>item.body));}} as unknown as Env['CHECK_QUEUE']};
+      await schedule(instrumented,timestamp);
+      for(const payload of messages)for(const job of payload.jobs)await recordResult(instrumented,job,{ok:true,statusCode:200,responseMs:20,error:null},timestamp+1);
+      return Response.json({samples,writes:samples.reduce((n,row)=>n+row.writes,0),checks:messages.reduce((n,p)=>n+p.jobs.length,0)});
+    }
     if (new URL(request.url).pathname === '/__test/retention-run') {
       const {start,timestamp,withSchedule}=await request.json() as {start:boolean;timestamp:number;withSchedule?:boolean};
       let queries=0;const instrumented={...env,DB:new Proxy(env.DB,{get(target,property){if(property==='prepare')return (sql:string)=>{queries++;return target.prepare(sql);};const value=Reflect.get(target,property);return typeof value==='function'?value.bind(target):value;}})};

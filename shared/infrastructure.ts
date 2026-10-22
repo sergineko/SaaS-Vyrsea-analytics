@@ -1,5 +1,6 @@
 export interface UsageMetric {
   project: number | null; account: number | null; projected: number | null; dailyLimit: number;
+  projectRecent?:number|null;accountRecent?:number|null;projectedProject?:number|null;projectSustained24h?:number|null;
 }
 export interface InfrastructureData {
   configured: boolean; fetchedAt: number; reportedThrough: number; dayStart: number; recentMinutes: number;

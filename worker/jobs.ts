@@ -139,7 +139,8 @@ export async function cleanup(env: Env, timestamp = nowSeconds()) {
   // Retention follows each account; bounded deletes limit work after long outages.
   const historyDays = `CASE WHEN u.plan_id='business' THEN u.history_days_limit ELSE p.history_days END`;
   for (const [table, field, limit] of [['checks','checked_at',3500], ['hourly_stats','hour',1000], ['incidents','resolved_at',500]] as const) {
-    const result=await env.DB.prepare(`DELETE FROM ${table} WHERE rowid IN (${retentionCandidatesSQL(table, field, limit)})`).bind(dayBoundary).run();
+    const key=table==='checks'?'id':table==='hourly_stats'?'(monitor_id,hour)':'rowid';
+    const result=await env.DB.prepare(`DELETE FROM ${table} WHERE ${key} IN (${retentionCandidatesSQL(table, field, limit)})`).bind(dayBoundary).run();
     deleted[table]=result.meta.changes;pending ||= result.meta.changes>=limit;
   }
   const notifications=await env.DB.prepare(`DELETE FROM notifications WHERE rowid IN (

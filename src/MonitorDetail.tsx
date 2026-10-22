@@ -5,6 +5,7 @@ import type { MaintenanceWindow } from '../shared/maintenance';
 import type { Check, Monitor } from './types';
 import { request } from './api';
 import { dateTime, Modal, relative, Status } from './ui';
+import {MonitorAvailability,MonitorProbes} from './MonitorAvailability';
 
 export type HistoryResult='all'|'failed'|'ok';
 export function MonitorDetail({monitor,history,busy,demo,onClose,onAction,onRenamed,limits,hasMore,loadingHistory,onLoadMore,historyFilter,onFilterChange,maintenance,onMaintenance}:{
@@ -15,6 +16,8 @@ export function MonitorDetail({monitor,history,busy,demo,onClose,onAction,onRena
   return <Modal title="Detalle del monitor" onClose={onClose} wide>
     <div className="detail-header"><span className="site-icon"><Signal size={23}/></span><div><h3>{monitor.name}</h3><a href={monitor.url} target="_blank" rel="noreferrer">{monitor.url}<ExternalLink size={13}/></a><small>Dominio: {monitor.rootDomain}</small></div><Status monitor={monitor} intervalSeconds={limits.intervalSeconds} maintenance={maintenance}/></div>
     <div className="detail-metrics"><div><span>Último HTTP</span><strong>{monitor.lastStatusCode??'—'}</strong></div><div><span>Tiempo</span><strong>{monitor.lastResponseMs===null?'—':`${monitor.lastResponseMs} ms`}</strong></div><div><span>Última revisión</span><strong>{relative(monitor.lastCheckedAt)}</strong></div></div>
+    <MonitorAvailability monitor={monitor} limits={limits} demo={demo}/>
+    {limits.advancedDashboard&&<MonitorProbes monitor={monitor} demo={demo} onSaved={onRenamed}/>}
     {maintenance&&<div className="maintenance-form-note"><Wrench size={18}/><p><strong>Mantenimiento hasta {dateTime(maintenance.endsAt)}.</strong> {maintenance.reason}. Las métricas muestran las últimas mediciones anteriores.</p></div>}
     {monitor.lastError&&!maintenance&&<p className="form-error">{monitor.lastError}</p>}
     <div className="detail-actions"><button disabled={busy||Boolean(maintenance)||monitor.paused} className="button secondary" onClick={()=>onAction('check')}><RefreshCw size={15}/>Comprobar ahora</button><button disabled={busy} className="button secondary" onClick={()=>onAction('pause')}>{monitor.paused?<Play size={15}/>:<Pause size={15}/>} {monitor.paused?'Reanudar':'Pausar'}</button><button className="button secondary" onClick={onMaintenance}><CalendarClock size={15}/>{maintenance?'Ver mantenimiento':'Programar mantenimiento'}</button></div>

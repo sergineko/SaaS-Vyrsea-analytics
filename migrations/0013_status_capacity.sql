@@ -1,0 +1,3 @@
+CREATE TRIGGER status_page_capacity BEFORE INSERT ON status_pages BEGIN
+ SELECT CASE WHEN (SELECT COUNT(*) FROM status_pages WHERE user_id=NEW.user_id)>=5 THEN RAISE(ABORT,'STATUS_PAGE_CAPACITY') END;
+END;

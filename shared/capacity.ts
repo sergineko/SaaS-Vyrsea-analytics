@@ -7,6 +7,7 @@ export function estimateCapacity(checksPerDay: number, activeMonitors = JOBS_PER
   if (!Number.isSafeInteger(checksPerDay) || checksPerDay < 0) throw new Error('Invalid daily check count');
   return {
     checksPerDay,
+    d1WritesBase:checksPerDay*10,
     queueOperationsMin: 3 * Math.max(Math.ceil(checksPerDay / Math.max(1, Math.min(activeMonitors, JOBS_PER_MESSAGE))), fastestChecksPerDay),
     queueOperationsMax: 3 * checksPerDay,
     queueFreeOperations: QUEUE_FREE_OPERATIONS_PER_DAY,

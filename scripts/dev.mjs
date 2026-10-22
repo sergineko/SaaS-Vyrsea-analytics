@@ -7,7 +7,7 @@ const run = (script, args) => spawn(process.execPath, [resolve(script), ...args]
 const migration = run('node_modules/wrangler/bin/wrangler.js', ['d1', 'migrations', 'apply', 'DB', '--local']);
 const code = await new Promise(resolve => migration.on('exit', resolve));
 if (code !== 0) process.exit(Number(code) || 1);
-const children = [run('node_modules/wrangler/bin/wrangler.js', ['dev', '--port', '8787', '--test-scheduled']), run('node_modules/vite/bin/vite.js', ['--host', 'localhost'])];
+const children = [run('node_modules/wrangler/bin/wrangler.js', ['dev', '--port', '8787', '--test-scheduled']), run('node_modules/vite/bin/vite.js', ['--host', '127.0.0.1'])];
 // Cron is not automatic in wrangler dev. Invoke only its loopback development API.
 let ticking = false;
 let cleanupDate = '';

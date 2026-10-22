@@ -9,6 +9,7 @@ import { expireInactiveAccounts } from './account-policy';
 import { estimateCapacity } from '../shared/capacity';
 import { infrastructure } from './infrastructure';
 import { retentionStatus } from './retention-job';
+import {business} from './business';
 
 export function denyInactive(c: Context<AppEnv>, user: User) {
   if (user.accountStatus !== 'active') return c.json({ code: user.accountStatus === 'pending' ? 'ACCOUNT_PENDING' : 'ACCOUNT_SUSPENDED',
@@ -51,13 +52,16 @@ owner.get('/infrastructure', async c => {
   const [data,retention]=await Promise.all([infrastructure(c.env),retentionStatus(c.env)]);
   return c.json({...data,retention});
 });
+owner.route('/',business);
 owner.get('/accounts', async c => {
   await expireInactiveAccounts(c.env);
   const [accounts, usage] = await c.env.DB.batch([
     c.env.DB.prepare(`SELECT u.id,u.username,u.created_at AS createdAt,u.account_status AS accountStatus,u.is_owner AS isOwner,
       u.plan_id AS planId,u.last_active_at AS lastActiveAt,u.status_changed_at AS statusChangedAt,u.suspension_reason AS suspensionReason,
       u.review_requested_at AS reviewRequestedAt,u.domain_limit AS domainLimit,u.monitor_limit AS monitorLimit,u.history_days_limit AS historyDaysLimit,
-      COUNT(m.id) AS monitors,COUNT(DISTINCT m.root_domain) AS domains
+      COUNT(m.id) AS monitors,COUNT(DISTINCT m.root_domain) AS domains,
+      (SELECT COUNT(*) FROM credentials cr WHERE cr.user_id=u.id) AS passkeys,
+      (SELECT expires_at FROM account_invitations ai WHERE ai.user_id=u.id AND ai.claimed_at IS NULL) AS invitationExpiresAt
       FROM users u LEFT JOIN monitors m ON m.user_id=u.id GROUP BY u.id
       ORDER BY CASE WHEN u.account_status='pending' OR u.review_requested_at IS NOT NULL THEN 0 ELSE 1 END,u.created_at DESC LIMIT 100`),
     c.env.DB.prepare(`SELECT (SELECT COUNT(*) FROM monitors m JOIN users u ON u.id=m.user_id WHERE u.is_owner=0) AS monitors,

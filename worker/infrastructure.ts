@@ -28,6 +28,7 @@ export function infrastructureQuery(env: Env, timestamp: number) {
     `${name}Project:${node}(limit:1,filter:{${time(day)},${resource}}){sum{${sum}}${name==='workers'?' quantiles{cpuTimeP50}':''}}`,
     `${name}Account:${node}(limit:1,filter:{${time(day)}}){sum{${sum}}}`,
     `${name}Recent:${node}(limit:1,filter:{${time(recent)}}){sum{${sum}}}`,
+    `${name}ProjectRecent:${node}(limit:1,filter:{${time(recent)},${resource}}){sum{${sum}}}`,
   ]);
   nodes.push(`queueDelay:queueMessageOperationsAdaptiveGroups(limit:1,filter:{${time(recent)},queueId:${JSON.stringify(queue)},actionType:"ReadMessage"}){avg{lagTime retryCount}}`);
   nodes.push(`storage:d1StorageAdaptiveGroups(limit:1,filter:{date:${JSON.stringify(new Date(day*1000).toISOString().slice(0,10))},databaseId:${JSON.stringify(db)}}){max{databaseSizeBytes}}`);
@@ -36,7 +37,8 @@ export function infrastructureQuery(env: Env, timestamp: number) {
 export function parseInfrastructure(data: Dataset, timestamp: number, window: {dayStart:number;reportedThrough:number}): InfrastructureData {
   function usage(kind:keyof typeof fields, dataset:string, dailyLimit:number):UsageMetric {
     const project=value(data[dataset+'Project'],'sum',fields[kind]),account=value(data[dataset+'Account'],'sum',fields[kind]);
-    return {project,account,dailyLimit,projected:projectDailyUsage(account,value(data[dataset+'Recent'],'sum',fields[kind]),window.reportedThrough,window.dayStart)};
+    const projectRecent=value(data[dataset+'ProjectRecent'],'sum',fields[kind]),accountRecent=value(data[dataset+'Recent'],'sum',fields[kind]);
+    return {project,account,dailyLimit,projectRecent,accountRecent,projected:projectDailyUsage(account,accountRecent,window.reportedThrough,window.dayStart),projectedProject:projectDailyUsage(project,projectRecent,window.reportedThrough,window.dayStart),projectSustained24h:projectRecent===null?null:Math.ceil(projectRecent*96)};
   }
   const cpu=value(data.workersProject,'quantiles','cpuTimeP50');
   return {configured:true,fetchedAt:timestamp,dayStart:window.dayStart,reportedThrough:window.reportedThrough,recentMinutes:15,
@@ -49,7 +51,7 @@ async function analytics(env: Env, timestamp: number) {
   const window={dayStart:Math.floor(timestamp/86400)*86400,reportedThrough:Math.max(Math.floor(timestamp/86400)*86400,timestamp-120)};
   if(!env.CLOUDFLARE_ANALYTICS_TOKEN)return {...parseInfrastructure({},timestamp,window),configured:false,errors:['La conexión de analítica aún no está configurada.']};
   try {
-    const key=new Request(`https://vyrsea.com/api/owner/infrastructure?cache=${env.CLOUDFLARE_ACCOUNT_ID}-${env.CLOUDFLARE_SCRIPT_NAME}-${env.CLOUDFLARE_D1_ID}-${env.CLOUDFLARE_QUEUE_ID}-${window.dayStart}-v1`);
+    const key=new Request(`https://vyrsea.com/api/owner/infrastructure?cache=${env.CLOUDFLARE_ACCOUNT_ID}-${env.CLOUDFLARE_SCRIPT_NAME}-${env.CLOUDFLARE_D1_ID}-${env.CLOUDFLARE_QUEUE_ID}-${window.dayStart}-v2`);
     if(warmCache?.key===key.url&&timestamp-warmCache.data.fetchedAt<60)return warmCache.data;
     let cache:Cache|undefined;
     try{cache=await caches.open('vyrsea-infrastructure-v1');const cached=await cache.match(key);if(cached){const data=await cached.json() as InfrastructureData;if(timestamp-data.fetchedAt<60){warmCache={key:key.url,data};return data;}}}catch{/* Cache failures must not hide valid provider metrics. */}

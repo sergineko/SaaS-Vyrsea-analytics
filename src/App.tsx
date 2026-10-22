@@ -11,7 +11,9 @@ const AuthModal = lazy(() => import('./AuthModal').then(module => ({ default: mo
 const AccountAccess = lazy(() => import('./AccountAccess').then(module => ({ default: module.AccountAccess })));
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [authMode, setAuthMode] = useState<'register' | 'login' | null>(null);
+  const [invitation,setInvitation]=useState(()=>{if(typeof location==='undefined')return undefined;const params=new URLSearchParams(location.hash.slice(1)),token=params.get('business'),username=params.get('usuario');return token&&username?{token,username}:undefined;});
+  const [authMode, setAuthMode] = useState<'register' | 'login' | null>(()=>invitation?'register':null);
+  useEffect(()=>{if(invitation)history.replaceState({},'',location.pathname+location.search);},[]);
   const [demo, setDemo] = useState<DemoMode | null>(() => typeof location === 'undefined' ? null : demoModeFromSearch(location.search));
   async function loadUser() { setUser((await request<{ user: User | null }>('/me')).user); }
   useEffect(() => { loadUser().catch(() => {}); }, []);
@@ -24,6 +26,6 @@ export default function App() {
   async function exit() { if (!demo && user) { await request('/auth/logout', 'POST'); setUser(null); } leaveDemo(); }
   return <>
     {user || demo ? <Suspense fallback={<div className="loading-screen"><Logo /><span>Abriendo tu espacio…</span></div>}>{!demo && user && user.accountStatus !== 'active' ? <AccountAccess user={user} onRefresh={loadUser} onExit={exit} /> : <Dashboard key={demo ?? 'account'} demo={demo !== null} demoMode={demo ?? 'free'} onDemoChange={showDemo} user={demo ? null : user} onExit={exit} onRegister={() => setAuthMode('register')} />}</Suspense> : <Landing onAuth={setAuthMode} onDemo={() => showDemo('free')} />}
-    {authMode && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Abriendo acceso seguro…</div></div>}><AuthModal initial={authMode} onClose={() => setAuthMode(null)} onSuccess={() => { setAuthMode(null); leaveDemo(); loadUser().catch(() => {}); }} /></Suspense>}
+    {authMode && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Abriendo acceso seguro…</div></div>}><AuthModal invitation={invitation} initial={authMode} onClose={() => {setAuthMode(null);setInvitation(undefined);}} onSuccess={() => { setAuthMode(null);setInvitation(undefined); leaveDemo(); loadUser().catch(() => {}); }} /></Suspense>}
   </>;
 }

@@ -25,18 +25,20 @@ export async function consumeChallenge(c: Parameters<typeof sessionUser>[0], kin
 
 auth.post('/register/options', async c => {
   await rateLimit(c, 'register', 5, 600);
-  const input = z.object({ username: usernameSchema, turnstileToken: z.string().optional() }).parse(await c.req.json());
+  const input = z.object({ username: usernameSchema, turnstileToken: z.string().optional(),invitationToken:z.string().min(40).max(80).optional() }).parse(await c.req.json());
   await verifyTurnstile(c, input.turnstileToken);
   const existing = await c.env.DB.prepare('SELECT id FROM users WHERE username=?').bind(input.username).first();
-  if (existing) throw new HTTPException(409, { message: 'Ese nombre de usuario ya está ocupado.' });
-  const userId = crypto.randomUUID();
+  let invitationHash:string|null=null;
+  if(input.invitationToken){invitationHash=await digest(input.invitationToken);const invite=await c.env.DB.prepare(`SELECT u.id FROM account_invitations ai JOIN users u ON u.id=ai.user_id WHERE ai.token_hash=? AND ai.expires_at>? AND ai.claimed_at IS NULL AND u.username=? AND u.is_owner=0 AND NOT EXISTS(SELECT 1 FROM credentials cr WHERE cr.user_id=u.id)`).bind(invitationHash,nowSeconds(),input.username).first<{id:string}>();if(!invite)throw new HTTPException(400,{message:'La invitación no es válida, ha caducado o ya se ha utilizado.'});}
+  else if(existing)throw new HTTPException(409,{message:'Ese nombre de usuario ya está ocupado.'});
+  const userId = invitationHash?(existing as {id:string}).id:crypto.randomUUID();
   const options = await generateRegistrationOptions({ rpName: 'Vyrsea', rpID: new URL(c.env.APP_ORIGIN).hostname,
     userName: input.username, userID: new TextEncoder().encode(userId), attestationType: 'none',
     supportedAlgorithmIDs: [-7, -257], authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
   });
   const challengeId = crypto.randomUUID();
-  await c.env.DB.prepare('INSERT INTO challenges(id,kind,challenge,user_id,username,expires_at) VALUES(?,?,?,?,?,?)')
-    .bind(challengeId, 'register', options.challenge, userId, input.username, nowSeconds() + 300).run();
+  await c.env.DB.prepare('INSERT INTO challenges(id,kind,challenge,user_id,username,expires_at,context) VALUES(?,?,?,?,?,?,?)')
+    .bind(challengeId, 'register', options.challenge, userId, input.username, nowSeconds() + 300,invitationHash).run();
   putCookie(c, 'challenge', challengeId, 300);
   return c.json(options);
 });
@@ -49,6 +51,18 @@ auth.post('/register/verify', async c => {
     expectedOrigin: c.env.APP_ORIGIN, expectedRPID: new URL(c.env.APP_ORIGIN).hostname, requireUserVerification: true }));
   if (!result.verified || !result.registrationInfo) throw new HTTPException(400, { message: 'No se pudo verificar la passkey.' });
   const { credential } = result.registrationInfo;
+  if(saved.context){
+    const session=await newSession(c,saved.user_id,credential.id),timestamp=nowSeconds();
+    const writes=await c.env.DB.batch([
+      c.env.DB.prepare(`INSERT INTO credentials(id,user_id,public_key,counter,transports,created_at)
+        SELECT ?,u.id,?,?,?,? FROM users u JOIN account_invitations ai ON ai.user_id=u.id WHERE u.id=? AND u.username=? AND u.is_owner=0 AND ai.token_hash=? AND ai.expires_at>? AND ai.claimed_at IS NULL AND NOT EXISTS(SELECT 1 FROM credentials cr WHERE cr.user_id=u.id)`)
+        .bind(credential.id,bytesToBase64(credential.publicKey),credential.counter,JSON.stringify(credential.transports??[]),timestamp,saved.user_id,saved.username,saved.context,timestamp),
+      c.env.DB.prepare('UPDATE account_invitations SET claimed_at=? WHERE user_id=? AND token_hash=? AND claimed_at IS NULL AND EXISTS(SELECT 1 FROM credentials WHERE id=? AND user_id=?)').bind(timestamp,saved.user_id,saved.context,credential.id,saved.user_id),
+      session.statement,
+    ]);
+    if(writes[0].meta.changes!==1)throw new HTTPException(409,{message:'La invitación ha caducado, se ha sustituido o ya está utilizada.'});
+    session.commitCookie();return c.json({ok:true},201);
+  }
   const session = await newSession(c, saved.user_id);
   await c.env.DB.batch([
     c.env.DB.prepare("INSERT INTO users(id,username,created_at,account_status,last_active_at,status_changed_at) VALUES(?,?,?,'pending',?,?)")

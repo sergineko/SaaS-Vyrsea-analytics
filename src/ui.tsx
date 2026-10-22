@@ -1,8 +1,9 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import type { HourStat, Monitor } from './types';
 import { FREE_LIMITS, staleAfterSeconds } from '../shared/plans';
 import type { MaintenanceWindow } from '../shared/maintenance';
+import { availabilityBuckets } from '../shared/availability';
 export const dateTime = (time: number) => new Date(time * 1000).toLocaleString('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 export const relative = (time: number | null) => {
   if (!time) return 'Sin comprobar';
@@ -15,23 +16,18 @@ export function Status({ monitor, intervalSeconds = FREE_LIMITS.intervalSeconds,
   const label = monitor.paused ? 'En pausa' : maintenance ? 'Mantenimiento' : stale ? 'Sin datos recientes' : ({ up: 'Operativo', down: 'Caído', degraded: 'Confirmando', pending: 'Pendiente' } as const)[monitor.status];
   return <span className={`status status-${status}`}><i />{label}</span>;
 }
-export function UptimeBars({ stats, count = 24, days = 1 }: { stats: HourStat[]; count?: number; days?: number }) {
-  const hour = Math.floor(Date.now() / 3600000) * 3600;
-  return <div className="uptime-bars" aria-label={days === 1 ? 'Disponibilidad por hora' : `Disponibilidad en intervalos de ${days} horas`}>{Array.from({ length: count }, (_, i) => {
-    const bucket = hour + 3600 - (count - i) * days * 3600;
-    const values = stats.filter(s => s.hour >= bucket && s.hour < bucket + days * 3600);
-    const total = values.reduce((n, s) => n + s.total, 0);
-    const up = values.reduce((n, s) => n + s.successful, 0);
-    return <span key={i} className={!total ? 'no-data' : up === total ? 'healthy' : 'failed'} title={`${dateTime(bucket)} · ${total ? `${up}/${total} correctas` : 'Sin datos'}`} />;
-  })}</div>;
+export function UptimeBars({ stats, count = 24, days = 1, from, to, interactive=false }: { stats: HourStat[]; count?: number; days?: number;from?:number;to?:number;interactive?:boolean }) {
+  const end=to??Math.floor(Date.now()/3600000)*3600+3600,start=from??end-count*days*3600;
+  const [focus,setFocus]=useState<number|null>(null),buckets=availabilityBuckets(stats,start,end,count);
+  const label=(b:typeof buckets[number])=>`${dateTime(b.from)} · ${b.total?`${(100*b.successful/b.total).toLocaleString('es-ES',{maximumFractionDigits:2})} % · ${b.successful}/${b.total} correctas`:'Sin mediciones'}`;
+  return <div className={interactive?'availability-timeline':''}><div className="uptime-bars" aria-label={(end-start)/count===3600?'Disponibilidad por hora':'Disponibilidad por intervalos del periodo'}>{buckets.map((b,i)=>{
+    const className=!b.total?'no-data':b.successful===b.total?'healthy':b.successful?'partial':'failed';
+    return interactive?<button key={i} className={className} aria-label={label(b)} title={label(b)} onFocus={()=>setFocus(i)} onBlur={()=>setFocus(null)} onPointerEnter={()=>setFocus(i)} onPointerLeave={()=>setFocus(null)}/>:<span key={i} className={className} title={label(b)}/>;
+  })}</div>{interactive&&<div className="timeline-caption"><span>{focus===null?dateTime(start):label(buckets[focus])}</span><span>{focus===null?dateTime(end):'Intervalos horarios · sin muestras ≠ caída'}</span></div>}</div>;
 }
 export function Chart({ stats, days = 1 }: { stats: HourStat[]; days?: number }) {
   const now = Math.floor(Date.now() / 3600000) * 3600;
-  const values = Array.from({ length: 24 }, (_, i) => {
-    const bucket = now + 3600 - (24 - i) * days * 3600;
-    const set = stats.filter(s => s.hour >= bucket && s.hour < bucket + days * 3600); const total = set.reduce((n, s) => n + s.total, 0);
-    return total ? Math.round(set.reduce((n, s) => n + s.totalMs, 0) / total) : null;
-  });
+  const values=availabilityBuckets(stats,now+3600-24*days*3600,now+3600,24).map(bucket=>bucket.total?Math.round(bucket.totalMs/bucket.total):null);
   const max = Math.max(400, ...values.filter((v): v is number => v !== null)) * 1.2;
   const paths: string[] = []; let path = '';
   values.forEach((value, i) => { if (value === null) { if (path) paths.push(path); path = ''; } else path += `${path ? ' L' : 'M'}${46 + i * 654 / 23},${154 - value / max * 120}`; }); if (path) paths.push(path);
@@ -47,7 +43,7 @@ export function Modal({ title, children, onClose, wide = false }: { title: strin
   const close = useRef(onClose); close.current = onClose;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    const items = () => Array.from(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input,select,a[href],[tabindex="0"]') ?? []);
+    const items = () => Array.from(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input,select,textarea,a[href],[tabindex="0"]') ?? []);
     items()[0]?.focus(); const previousOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden';
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') close.current(); if (e.key !== 'Tab') return; const all=items(); const first=all[0],last=all[all.length-1]; if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();} };
     document.addEventListener('keydown',handler);

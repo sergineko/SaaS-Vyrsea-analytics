@@ -31,6 +31,7 @@ export const monitors = sqliteTable('monitors', {
   failures: integer('failures').notNull().default(0), lastCheckedAt: integer('last_checked_at'),
   lastStatusCode: integer('last_status_code'), lastResponseMs: real('last_response_ms'), lastError: text('last_error'),
   nextCheckAt: integer('next_check_at').notNull(), lastSlot: integer('last_slot').notNull().default(0),
+  probeMask: integer('probe_mask').notNull().default(7),
   createdAt: integer('created_at').notNull(),
 });
 export const maintenanceWindows = sqliteTable('maintenance_windows', {

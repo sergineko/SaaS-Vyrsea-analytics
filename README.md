@@ -20,7 +20,7 @@ Repositorio: [sergineko/SaaS-Vyrsea-analytics](https://github.com/sergineko/SaaS
 - Mantenimiento inmediato o programado por servicio, sin solapamientos y con reanudación automática. Las ventanas suspenden sondas/alertas y no fabrican disponibilidad. Las incidencias previas se conservan.
 - Outbox persistente para entregar trabajos a Queues, reintentos, cola de mensajes fallidos y procesamiento idempotente.
 - Retención por cuenta: Free 7 días, Starter 30 días, Pro / Agencia 90 días y Business según contrato. Se aplica a resultados, agregados, alertas e incidencias resueltas. Las incidencias abiertas se conservan.
-- Plataforma avanzada real con cartera agrupada, detalle de sondas, vista previa privada de estado e informe CSV bajo demanda para Business. Las secciones de integraciones y equipo identifican lo que sigue pendiente. La demo de solo lectura continúa separada del backend real: `/?demo`.
+- Plataforma avanzada real con cartera agrupada, selección de sondas, páginas de estado personalizables con publicación y exportación HTML e informe CSV bajo demanda para Business. Las secciones de integraciones y equipo identifican lo que sigue pendiente. La demo de solo lectura continúa separada del backend real: `/?demo`.
 - Portada prerenderizada, diseño adaptable, acceso por teclado, metadatos para `https://vyrsea.com`, sitemap, robots, datos estructurados y página 404 real.
 - Documentación pública en `/llms.txt` y `/openapi.json`; herramientas WebMCP experimentales de solo lectura cuando el navegador las admite.
 
@@ -138,3 +138,7 @@ Documentación oficial consultada el 22 de octubre de 2026:
 - [SimpleWebAuthn: registro y acceso](https://simplewebauthn.dev/docs/packages/server)
 
 La pantalla de propietario incluye [métricas reales de Cloudflare](docs/infrastructure-metrics.md) y estado de la [limpieza automática del histórico](docs/historical-retention.md).
+
+Novedades de plataforma: [resumen, periodos, páginas de estado y alta Business](docs/workspace-tools.md).
+
+Evaluación de infraestructura: [D1, coste por comprobación y comparación con PostgreSQL](docs/database-decision.md).

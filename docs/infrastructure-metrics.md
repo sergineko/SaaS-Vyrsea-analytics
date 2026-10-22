@@ -1,6 +1,6 @@
 # Métricas reales y capacidad
 
-**Accesos y cuentas** consulta Cloudflare desde el servidor, exclusivamente para el propietario activo. El token `vyrsea-analytics` tiene únicamente `Account Analytics: Read` sobre la cuenta autorizada. Se guarda como `CLOUDFLARE_ANALYTICS_TOKEN`, nunca como variable VITE ni en el repositorio. La instalación temporal autorizada se elimina después de guardarlo. El token puede leer analítica de toda la cuenta; las consultas de aplicación muestran recursos de Vyrsea y totales agregados de la cuenta para interpretar las cuotas compartidas. No permiten elegir recursos, fechas ni consultas desde el navegador.
+**Admin Propietario** consulta Cloudflare desde el servidor, exclusivamente para el propietario activo. El token `vyrsea-analytics` tiene únicamente `Account Analytics: Read` sobre la cuenta autorizada. Se guarda como `CLOUDFLARE_ANALYTICS_TOKEN`, nunca como variable VITE ni en el repositorio. La instalación temporal autorizada se elimina después de guardarlo. El token puede leer analítica de toda la cuenta; las consultas de aplicación muestran recursos de Vyrsea y totales agregados de la cuenta para interpretar las cuotas compartidas. No permiten elegir recursos, fechas ni consultas desde el navegador.
 
 La API utiliza `queueMessageOperationsAdaptiveGroups`, `d1AnalyticsAdaptiveGroups`, `d1StorageAdaptiveGroups` y `workersInvocationsAdaptive`. Consulta la cola, D1 y el script fijados en `wrangler.production.jsonc`. Los totales de cuenta no exponen nombres, consultas SQL ni datos de otras aplicaciones.
 
@@ -28,3 +28,5 @@ Agrupar permite ampliar la beta, pero no justifica eliminar los límites técnic
 El programador automático ancla sus próximas revisiones al minuto actual, evitando que el jitter de llegada del Cron desplace los vencimientos y salte un ciclo. No intenta fabricar comprobaciones de minutos pasados ni repetir una reserva en el mismo slot. Los controles manuales conservan su espera mínima exacta. Las pruebas reproducen una llegada en el segundo 20 seguida de otra en el segundo 5 del ciclo siguiente para Free, Starter y Pro.
 
 Referencias: [métricas de Queues](https://developers.cloudflare.com/queues/observability/metrics/), [precios de Queues](https://developers.cloudflare.com/queues/platform/pricing/), [D1](https://developers.cloudflare.com/d1/observability/metrics-analytics/) y [Workers](https://developers.cloudflare.com/analytics/graphql-api/tutorials/querying-workers-metrics/).
+
+La tabla también separa la previsión al cierre de Vyrsea de la de toda la cuenta y el ritmo de Vyrsea extrapolado a 24 h. Los tres valores evitan confundir un acumulado parcial con una previsión diaria. [Medición de escrituras y evaluación D1/PostgreSQL](database-decision.md).
