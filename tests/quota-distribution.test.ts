@@ -28,8 +28,8 @@ describe.sequential('Independent domain and total-monitor maxima',()=>{
     // Isolated in-memory capacity fixture only: paid-plan maxima exceed the current global trial cap.
     // Keep the actual production trigger otherwise intact; no migration or real data is modified.
     const original=(await db.prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='monitor_capacity'").first<{sql:string}>())!.sql;
-    expect(original).toContain("(SELECT COUNT(*) FROM monitors) >= 10");
-    await db.batch([db.prepare('DROP TRIGGER monitor_capacity'),db.prepare(original.replace('(SELECT COUNT(*) FROM monitors) >= 10','(SELECT COUNT(*) FROM monitors) >= 100'))]);
+    expect(original).toContain("(SELECT COUNT(*) FROM monitors m JOIN users u ON u.id=m.user_id WHERE u.is_owner=0) >= 10");
+    await db.batch([db.prepare('DROP TRIGGER monitor_capacity'),db.prepare(original.replace('(SELECT COUNT(*) FROM monitors m JOIN users u ON u.id=m.user_id WHERE u.is_owner=0) >= 10','(SELECT COUNT(*) FROM monitors m JOIN users u ON u.id=m.user_id WHERE u.is_owner=0) >= 100'))]);
     await db.prepare("INSERT INTO users(id,username,created_at,plan_id,account_status) VALUES('starter-two','starter-two',1,'starter','active')").run();
     for(let i=0;i<15;i++)await insert('starter-two',i,i<12?'first.example':'second.example');
     const usage=await db.prepare("SELECT COUNT(*) AS monitors,COUNT(DISTINCT root_domain) AS domains FROM monitors WHERE user_id='starter-two'").first();

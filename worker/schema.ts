@@ -11,9 +11,18 @@ export const users = sqliteTable('users', {
 export const credentials = sqliteTable('credentials', {
   id: text('id').primaryKey(), userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   publicKey: text('public_key').notNull(), counter: integer('counter').notNull().default(0), transports: text('transports').notNull(),
+  label: text('label').notNull().default('Passkey'), createdAt: integer('created_at').notNull().default(0),
 });
 export const sessions = sqliteTable('sessions', {
   tokenHash: text('token_hash').primaryKey(), userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }), expiresAt: integer('expires_at').notNull(),
+});
+export const recentAuth = sqliteTable('recent_auth', {
+  sessionHash: text('session_hash').primaryKey().references(() => sessions.tokenHash, {onDelete:'cascade'}),
+  userId: text('user_id').notNull().references(() => users.id, {onDelete:'cascade'}), expiresAt: integer('expires_at').notNull(),
+});
+export const recoveryCodes = sqliteTable('recovery_codes', {
+  codeHash: text('code_hash').primaryKey(), userId: text('user_id').notNull().references(() => users.id, {onDelete:'cascade'}),
+  createdAt: integer('created_at').notNull(),
 });
 export const monitors = sqliteTable('monitors', {
   id: text('id').primaryKey(), userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

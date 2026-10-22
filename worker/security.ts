@@ -48,7 +48,7 @@ export async function rateLimit(c: Context<AppEnv>, scope: string, limit: number
     .bind(key, timestamp + windowSeconds).first<{ count: number }>();
   if (!row || row.count > limit) throw new HTTPException(429, { message: 'Demasiadas solicitudes. Espera unos minutos e inténtalo de nuevo.' });
 }
-export async function verifyTurnstile(c: Context<AppEnv>, token?: string) {
+export async function verifyTurnstile(c: Context<AppEnv>, token?: string, action = 'register') {
   if (!c.env.TURNSTILE_SECRET_KEY && isLocal(c.env.APP_ORIGIN)) return;
   if (!c.env.TURNSTILE_SECRET_KEY || !c.env.TURNSTILE_SITE_KEY) throw new HTTPException(503, { message: 'El registro estará disponible cuando se configure Turnstile.' });
   if (!token || token.length > 2048) throw new HTTPException(400, { message: 'Completa la verificación de seguridad.' });
@@ -57,7 +57,7 @@ export async function verifyTurnstile(c: Context<AppEnv>, token?: string) {
     body: JSON.stringify({ secret: c.env.TURNSTILE_SECRET_KEY, response: token, remoteip: c.req.header('CF-Connecting-IP') }),
   });
   const result = await response.json() as { success: boolean; hostname: string; action: string };
-  if (!result.success || result.hostname !== new URL(c.env.APP_ORIGIN).hostname || result.action !== 'register') {
+  if (!result.success || result.hostname !== new URL(c.env.APP_ORIGIN).hostname || result.action !== action) {
     throw new HTTPException(400, { message: 'No se pudo verificar la seguridad. Vuelve a intentarlo.' });
   }
 }

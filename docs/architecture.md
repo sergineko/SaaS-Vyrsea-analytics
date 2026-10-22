@@ -1,6 +1,6 @@
 # Arquitectura del MVP de Vyrsea
 
-Vyrsea ejecuta la aplicación y la monitorización en Cloudflare. El alcance es disponibilidad HTTP básica para un prototipo de diez webs, no una plataforma comercial con SLA ni medición desde ubicaciones garantizadas.
+Vyrsea ejecuta la aplicación y la monitorización en Cloudflare. La beta limita a diez los monitores de clientes y exime al propietario de cuotas de dominios y monitores. La capacidad de ejecución sigue acotada y no ofrece SLA ni ubicaciones garantizadas.
 
 ```mermaid
 flowchart LR
@@ -44,7 +44,7 @@ flowchart LR
 5. Una transacción D1 inserta el resultado, actualiza el agregado horario, abre o cierra incidencias, genera alertas, actualiza `last_slot` y elimina el trabajo pendiente. Todas las escrituras están protegidas por el slot anterior. Una repetición no duplica estadísticas ni alertas.
 6. Una reserva entregada que siga sin finalizar después de quince minutos puede reenviarse desde el outbox. Una entrega antigua se ignora si ya se registró un slot posterior. No se fabrican comprobaciones de los periodos perdidos.
 
-El `max_concurrency: 3` y `max_batch_size: 1` permiten procesar los tres mensajes del máximo actual de diez monitores sin serializar las esperas de red entre mensajes. Los cuatro monitores de cada mensaje se procesan secuencialmente: hasta 48 peticiones externas y 40 sentencias D1 por invocación. Los límites externos e internos son distintos; el límite D1 Free sigue siendo 50 consultas. No aumentar tamaños sin recalcular este presupuesto y medir CPU. Consulta el [modelo de coste, límites actuales y evolución a 100/1.000 cuentas](capacity.md).
+El `max_concurrency: 3` y `max_batch_size: 1` permiten procesar los tres mensajes del lote actual de diez trabajos sin serializar las esperas de red entre mensajes. Los cuatro monitores de cada mensaje se procesan secuencialmente: hasta 48 peticiones externas y 40 sentencias D1 por invocación. Los límites externos e internos son distintos; el límite D1 Free sigue siendo 50 consultas. No aumentar tamaños sin recalcular este presupuesto y medir CPU. Consulta el [modelo de coste, límites actuales y evolución a 100/1.000 cuentas](capacity.md).
 
 ## Estados y estadísticas
 

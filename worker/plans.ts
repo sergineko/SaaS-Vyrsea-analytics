@@ -3,14 +3,15 @@ import { PLAN_CATALOG, type PlanLimits } from '../shared/plans';
 import { registeredDomain } from '../shared/domains';
 
 export async function accountPlan(env: Env, userId: string): Promise<PlanLimits> {
-  const plan = await env.DB.prepare(`SELECT p.id,p.name,
+  const plan = await env.DB.prepare(`SELECT p.id,p.name,u.is_owner AS owner,
     CASE WHEN p.id='business' THEN u.domain_limit ELSE p.max_domains END AS domains,
     CASE WHEN p.id='business' THEN u.monitor_limit ELSE p.max_monitors END AS monitors,
     CASE WHEN p.id='business' THEN u.history_days_limit ELSE p.history_days END AS historyDays,p.interval_seconds AS intervalSeconds
-    FROM plan_limits p JOIN users u ON u.plan_id=p.id WHERE u.id=?`).bind(userId).first<PlanLimits>();
+    FROM users u JOIN plan_limits p ON p.id=CASE WHEN u.is_owner=1 THEN 'business' ELSE u.plan_id END WHERE u.id=?`).bind(userId).first<PlanLimits & {owner:number}>();
   const definition = PLAN_CATALOG.find(item => item.id === plan?.id);
-  if (!plan || !definition || !plan.domains || !plan.monitors || !plan.historyDays) throw new Error('Missing account plan or custom contract limits');
-  return { ...plan, advancedDashboard: definition.advancedDashboard, multiProbe: definition.multiProbe };
+  if (!plan || !definition || (!plan.owner && (!plan.domains || !plan.monitors)) || !plan.historyDays) throw new Error('Missing account plan or custom contract limits');
+  const {owner,...limits}=plan;
+  return { ...limits, ...(owner ? {name:'Business · propietario',domains:null,monitors:null} : {}), advancedDashboard: definition.advancedDashboard, multiProbe: definition.multiProbe };
 }
 
 export async function backfillDomains(env: Env, userId: string) {

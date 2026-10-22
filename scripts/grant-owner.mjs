@@ -10,8 +10,8 @@ if (index < 0 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 const remote = args.includes('--remote'), config = remote ? 'wrangler.production.jsonc' : 'wrangler.jsonc';
 if (!existsSync(config)) throw new Error(`Falta ${config}; no se modifica ninguna cuenta.`);
 // Owner is provisioned through a trusted operator CLI, never first-signup logic or a public API.
-// Business quotas stay within the prototype's global ten-monitor ceiling; billing remains disabled.
-const sql = `UPDATE users SET is_owner=1,account_status='active',plan_id='business',domain_limit=10,monitor_limit=10,history_days_limit=90,
+// The trusted owner is exempt from product quotas; physical Free capacity is still finite.
+const sql = `UPDATE users SET is_owner=1,account_status='active',plan_id='business',domain_limit=NULL,monitor_limit=NULL,history_days_limit=90,
   last_active_at=unixepoch(),status_changed_at=unixepoch(),suspension_reason=NULL,review_requested_at=NULL
   ,monitoring_since=(CAST(unixepoch()/60 AS INTEGER)+1)*60
   WHERE id='${id}' RETURNING id,username,account_status,plan_id,is_owner,domain_limit,monitor_limit,history_days_limit;

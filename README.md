@@ -9,7 +9,8 @@ Repositorio: [sergineko/SaaS-Vyrsea-analytics](https://github.com/sergineko/SaaS
 - Beta con aprobación manual de nuevas cuentas y reactivaciones desde un panel exclusivo del propietario. Free se suspende tras más de 14 días sin uso real (una hora de margen por agrupación de actividad); el refresco automático, sondas y agentes no mantienen activa la cuenta. [Acceso y política de inactividad](docs/account-access.md).
 
 - Registro y acceso con passkeys verificadas en el servidor. Sesiones de siete días, tokens aleatorios almacenados como SHA-256, cookies HttpOnly y SameSite Strict; en HTTPS usan Secure y prefijo `__Host-`.
-- Plan **Free: 1 dominio registrable y 2 monitores en total por cuenta**, con límites atómicos en SQLite. Los monitores pausados también ocupan capacidad. El prototipo conserva además un tope técnico de **10 monitores entre todas las cuentas**.
+- Seguridad de acceso: passkeys de respaldo y ocho códigos de recuperación de un solo uso, almacenados como hashes. La recuperación sustituye las claves y revoca las sesiones anteriores. Requiere [guardar previamente el kit](docs/access-recovery.md).
+- Plan **Free: 1 dominio registrable y 2 monitores en total por cuenta**, con límites atómicos en SQLite. Los monitores pausados también ocupan capacidad. La beta conserva además un tope técnico compartido de **10 monitores de clientes**; el propietario está exento de cuotas de dominios y monitores. Los recursos Free siguen siendo finitos.
 - Agrupación automática del dominio principal y sus subdominios, vista por dominios, filtros y cuotas visibles. La identificación usa Public Suffix List, incluidos sufijos como `co.uk` y proveedores como `github.io`.
 - Cuotas independientes: Starter permite repartir los 15 monitores entre 2 dominios sin registrar el máximo de 5. Demos separadas: `/?demo` (Free), `/?demo=pro` (cartera avanzada) y `/?demo=business` (equipo, personalización e informe CSV de ejemplo). Son datos simulados y no cambian el plan real; las integraciones externas y Dodo Payments siguen deshabilitados.
 - Alta, renombrado, pausa, reanudación y eliminación. Para cambiar la URL se crea un monitor nuevo, evitando mezclar históricos.
@@ -19,7 +20,7 @@ Repositorio: [sergineko/SaaS-Vyrsea-analytics](https://github.com/sergineko/SaaS
 - Mantenimiento inmediato o programado por servicio, sin solapamientos y con reanudación automática. Las ventanas suspenden sondas/alertas y no fabrican disponibilidad. Las incidencias previas se conservan.
 - Outbox persistente para entregar trabajos a Queues, reintentos, cola de mensajes fallidos y procesamiento idempotente.
 - Retención por cuenta: Free 7 días, Starter 30 días, Pro / Agencia 90 días y Business según contrato. Se aplica a resultados, agregados, alertas e incidencias resueltas. Las incidencias abiertas se conservan.
-- Demo de solo lectura con datos de ejemplo separada del backend real: `/?demo`.
+- Plataforma avanzada real con cartera agrupada, detalle de sondas, vista previa privada de estado e informe CSV bajo demanda para Business. Las secciones de integraciones y equipo identifican lo que sigue pendiente. La demo de solo lectura continúa separada del backend real: `/?demo`.
 - Portada prerenderizada, diseño adaptable, acceso por teclado, metadatos para `https://vyrsea.com`, sitemap, robots, datos estructurados y página 404 real.
 - Documentación pública en `/llms.txt` y `/openapi.json`; herramientas WebMCP experimentales de solo lectura cuando el navegador las admite.
 

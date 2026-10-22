@@ -50,10 +50,11 @@ owner.get('/accounts', async c => {
   const [accounts, usage] = await c.env.DB.batch([
     c.env.DB.prepare(`SELECT u.id,u.username,u.created_at AS createdAt,u.account_status AS accountStatus,u.is_owner AS isOwner,
       u.plan_id AS planId,u.last_active_at AS lastActiveAt,u.status_changed_at AS statusChangedAt,u.suspension_reason AS suspensionReason,
-      u.review_requested_at AS reviewRequestedAt,COUNT(m.id) AS monitors,COUNT(DISTINCT m.root_domain) AS domains
+      u.review_requested_at AS reviewRequestedAt,u.domain_limit AS domainLimit,u.monitor_limit AS monitorLimit,u.history_days_limit AS historyDaysLimit,
+      COUNT(m.id) AS monitors,COUNT(DISTINCT m.root_domain) AS domains
       FROM users u LEFT JOIN monitors m ON m.user_id=u.id GROUP BY u.id
       ORDER BY CASE WHEN u.account_status='pending' OR u.review_requested_at IS NOT NULL THEN 0 ELSE 1 END,u.created_at DESC LIMIT 100`),
-    c.env.DB.prepare(`SELECT (SELECT COUNT(*) FROM monitors) AS monitors,
+    c.env.DB.prepare(`SELECT (SELECT COUNT(*) FROM monitors m JOIN users u ON u.id=m.user_id WHERE u.is_owner=0) AS monitors,
       (SELECT COUNT(*) FROM check_jobs) AS queuedChecks,
       (SELECT COUNT(*) FROM users WHERE account_status='active') AS activeAccounts,
       COALESCE(SUM(CASE WHEN m.paused=0 AND u.account_status='active' THEN 86400 / p.interval_seconds ELSE 0 END),0) AS checksPerDay,
@@ -64,6 +65,25 @@ owner.get('/accounts', async c => {
   const measured = usage.results[0] as Record<string, number>;
   return c.json({ accounts: accounts.results, usage: { ...measured, monitorLimit: MAX_MONITORS_TOTAL, accountLimit: 100 },
     capacity: estimateCapacity(measured.checksPerDay, measured.activeMonitors, measured.fastestChecksPerDay), inactivityDays: 14 });
+});
+const planInput = z.discriminatedUnion('planId', [
+  z.object({planId:z.literal('business'),domainLimit:z.number().int().min(1).max(1_000_000),monitorLimit:z.number().int().min(1).max(1_000_000),historyDaysLimit:z.number().int().min(1).max(365)}).strict(),
+  z.object({planId:z.enum(['free','starter','pro'])}).strict(),
+]);
+owner.patch('/accounts/:id/plan', async c => {
+  const input=planInput.parse(await c.req.json()), id=c.req.param('id'), timestamp=nowSeconds();
+  const target=await c.env.DB.prepare('SELECT id,is_owner FROM users WHERE id=?').bind(id).first<{id:string;is_owner:number}>();
+  if(!target)throw new HTTPException(404,{message:'No se ha encontrado la cuenta.'});
+  if(target.is_owner)throw new HTTPException(409,{message:'El propietario tiene acceso completo y no se modifica desde este formulario.'});
+  const interval=await c.env.DB.prepare('SELECT interval_seconds FROM plan_limits WHERE id=?').bind(input.planId).first<{interval_seconds:number}>();
+  const resumeAt=(Math.floor(timestamp/60)+1)*60;
+  await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE users SET plan_id=?,domain_limit=?,monitor_limit=?,history_days_limit=?,monitoring_since=? WHERE id=? AND is_owner=0`)
+      .bind(input.planId,input.planId==='business'?input.domainLimit:null,input.planId==='business'?input.monitorLimit:null,input.planId==='business'?input.historyDaysLimit:null,resumeAt,id),
+    c.env.DB.prepare('DELETE FROM check_jobs WHERE monitor_id IN (SELECT id FROM monitors WHERE user_id=?)').bind(id),
+    c.env.DB.prepare('UPDATE monitors SET next_check_at=MAX(COALESCE(last_checked_at,0)+?,?) WHERE user_id=?').bind(interval!.interval_seconds,resumeAt,id),
+  ]);
+  return c.json({ok:true,billingEnabled:false});
 });
 owner.post('/accounts/:id/:action', async c => {
   z.object({}).strict().parse(await c.req.json());

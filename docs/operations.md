@@ -27,7 +27,7 @@ Los recursos estáticos incluyen CSP, protección de framing, política de refer
 - Las passkeys están vinculadas al hostname. No registrar usuarios reales en un dominio que se vaya a sustituir sin preparar una migración de credenciales.
 - `PUBLIC_SITE_URL` fija el origen canónico `https://vyrsea.com`; no configura DNS ni publica por sí mismo. La ruta de producción se declara por separado en `wrangler.production.jsonc`.
 
-La recuperación de cuentas, gestión de passkeys adicionales, revocación de todas las sesiones y eliminación de cuenta completa quedan pendientes. Guarda la credencial en un gestor sincronizado y no emplees cuentas importantes hasta tener recuperación operativa. Un fallo de WebAuthn no debe resolverse desactivando la verificación de origen o de usuario.
+La recuperación mediante ocho códigos de un solo uso y hasta cinco passkeys está disponible en Seguridad de acceso. Añadir una clave o regenerar códigos exige confirmar una passkey de la misma cuenta y sesión. Recuperar revoca todas las claves y sesiones anteriores; conserva plan y aprobación. El kit debe guardarse antes de perder el acceso. El restablecimiento por correo, las notificaciones externas de seguridad y la eliminación de cuenta completa siguen pendientes. Consulta [el procedimiento y sus límites](access-recovery.md). Un fallo de WebAuthn no debe resolverse desactivando la verificación de origen o de usuario.
 
 ## Dominio publicado
 
@@ -64,7 +64,7 @@ Los mensajes de error de la aplicación no incluyen cookies, tokens, datos de pa
 - **Respuesta 409 al comprobar:** el monitor está en mantenimiento. Consulta su fin o cancela la ventana; la reanudación sigue respetando el intervalo del plan.
 - **Respuesta 429 al comprobar:** una solicitud ya ha reservado la siguiente sonda o todavía no ha transcurrido el intervalo del plan (Free 15 min, Starter 5 min, Pro / Agencia y Business 1 min). Actualizar el panel no gasta una sonda.
 - **Error HTTP 403 en un destino:** el sitio puede bloquear agentes o tráfico de Cloudflare. Se registra como error; el monitor no intenta saltarse esa protección.
-- **Límite de dominios o monitores:** Free permite un dominio y dos monitores totales. Pausar no libera capacidad. Eliminar el último monitor de un dominio libera ese grupo. Hay además un máximo global de diez monitores de prueba.
+- **Límite de dominios o monitores:** Free permite un dominio y dos monitores totales. Pausar no libera capacidad. Eliminar el último monitor de un dominio libera ese grupo. Hay además un máximo compartido de diez monitores de clientes de prueba. El propietario queda exento de cuotas de dominios y monitores, con el consumo de infraestructura visible en su panel.
 - **Documentos públicos en Vite:** ejecuta `pnpm run build` para generar `llms.txt`, OpenAPI, robots y sitemap; Vite los sirve desde `dist`. El Worker de producción entrega esos archivos como Static Assets.
 - **Errores SQLite con dos previews:** cada Wrangler debe usar un directorio `--persist-to` distinto. No borres archivos SQLite para resolverlo; detén el preview secundario y reinicia el principal con su persistencia original.
 - **D1 Free agotado:** las consultas fallan hasta que se restablezca la cuota del proveedor. No se cambia automáticamente a un plan de pago.

@@ -9,13 +9,13 @@ import { base64ToBytes, bytesToBase64, clearCookie, digest, newSession, putCooki
 import { expireInactiveAccounts } from './account-policy';
 
 export const auth = new Hono<AppEnv>();
-const usernameSchema = z.string().trim().toLowerCase().min(3).max(40).regex(/^[a-z0-9][a-z0-9_.-]+$/, 'Usa letras, números, puntos o guiones.');
-type Challenge = { kind: string; challenge: string; user_id: string; username: string };
-async function verifySafely<T>(verify: () => Promise<T>): Promise<T> {
+export const usernameSchema = z.string().trim().toLowerCase().min(3).max(40).regex(/^[a-z0-9][a-z0-9_.-]+$/, 'Usa letras, números, puntos o guiones.');
+type Challenge = { kind: string; challenge: string; user_id: string; username: string; context: string | null };
+export async function verifySafely<T>(verify: () => Promise<T>): Promise<T> {
   try { return await verify(); }
   catch { throw new HTTPException(400, { message: 'La passkey no es válida para esta solicitud. Vuelve a intentarlo.' }); }
 }
-async function consumeChallenge(c: Parameters<typeof sessionUser>[0], kind: string) {
+export async function consumeChallenge(c: Parameters<typeof sessionUser>[0], kind: string) {
   const id = readCookie(c, 'challenge');
   clearCookie(c, 'challenge');
   const row = id ? await c.env.DB.prepare('DELETE FROM challenges WHERE id=? AND expires_at>? RETURNING *').bind(id, nowSeconds()).first<Challenge>() : null;
@@ -53,8 +53,8 @@ auth.post('/register/verify', async c => {
   await c.env.DB.batch([
     c.env.DB.prepare("INSERT INTO users(id,username,created_at,account_status,last_active_at,status_changed_at) VALUES(?,?,?,'pending',?,?)")
       .bind(saved.user_id, saved.username, nowSeconds(), nowSeconds(), nowSeconds()),
-    c.env.DB.prepare('INSERT INTO credentials(id,user_id,public_key,counter,transports) VALUES(?,?,?,?,?)')
-      .bind(credential.id, saved.user_id, bytesToBase64(credential.publicKey), credential.counter, JSON.stringify(credential.transports ?? [])),
+    c.env.DB.prepare('INSERT INTO credentials(id,user_id,public_key,counter,transports,created_at) VALUES(?,?,?,?,?,?)')
+      .bind(credential.id, saved.user_id, bytesToBase64(credential.publicKey), credential.counter, JSON.stringify(credential.transports ?? []), nowSeconds()),
     session.statement,
   ]);
   session.commitCookie();

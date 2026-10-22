@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Clock3, LogOut, PauseCircle, RefreshCw } from 'lucide-react';
 import { Logo } from './Brand';
 import { request } from './api';
 import type { User } from './types';
 import './account-access.css';
+import './account-security.css';
+const AccountSecurity = lazy(() => import('./AccountSecurity'));
 
 export function AccountAccess({ user, onRefresh, onExit }: { user: User; onRefresh: () => Promise<void>; onExit: () => Promise<void> }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const [security, setSecurity] = useState(false);
   const pending = user.accountStatus === 'pending';
   async function action(review = false) {
     setBusy(true); setError('');
@@ -23,5 +26,5 @@ export function AccountAccess({ user, onRefresh, onExit }: { user: User; onRefre
     {error && <p role="alert" className="form-error">{error}</p>}
     <div className="access-actions">{!pending && !user.reviewRequestedAt && <button className="button primary" disabled={busy} onClick={() => action(true)}>Solicitar reactivación</button>}<button className="button secondary" disabled={busy} onClick={() => action()}><RefreshCw size={15} />Comprobar estado</button><button className="text-button" disabled={busy} onClick={() => { setBusy(true); onExit().catch(error => { setError(error.message); setBusy(false); }); }}><LogOut size={15} />Cerrar sesión</button></div>
     {pending && <p className="access-note">Free incluye 1 dominio y 2 monitores, con comprobaciones cada 15 minutos. La activación está sujeta a la capacidad de esta beta.</p>}
-  </section></main>;
+  </section><div className="access-security"><button className="text-button" onClick={() => setSecurity(!security)}>{security ? 'Ocultar seguridad de acceso' : 'Proteger mi acceso · passkeys y recuperación'}</button>{security && <Suspense fallback={<p className="muted">Cargando seguridad…</p>}><AccountSecurity username={user.username}/></Suspense>}</div></main>;
 }

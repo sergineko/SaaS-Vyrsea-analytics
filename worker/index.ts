@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { bodyLimit } from 'hono/body-limit';
 import { ZodError } from 'zod';
 import { auth } from './auth';
+import { credentialSecurity } from './credential-security';
 import { api } from './api';
 import type { AppEnv, Env, QueuePayload } from './env';
 import { cleanup, consume, schedule } from './jobs';
@@ -31,6 +32,7 @@ app.get('/api/config', c => c.json({ turnstileSiteKey: c.env.TURNSTILE_SITE_KEY 
 app.get('/api/me', async c => c.json({ user: await sessionUser(c) }));
 app.get('/api/plans', c => c.json({ plans: PLAN_CATALOG, billing: BILLING, activeProbeProviders: ['cloudflare'], multiProbeActive: false }));
 app.route('/api/auth', auth);
+app.route('/api/auth', credentialSecurity);
 app.route('/api/account', account);
 app.route('/api/owner', owner);
 app.route('/api', api);
@@ -45,7 +47,8 @@ app.onError((error, c) => {
   if (/DOMAIN_CAPACITY/.test(detail)) return c.json({ error: 'Has alcanzado el límite de dominios de tu plan. En Free los dos monitores deben pertenecer al mismo dominio principal.' }, 409);
   if (/MONITOR_CAPACITY/.test(detail)) return c.json({ error: 'Has alcanzado el límite de monitores de tu plan. Free incluye 1 dominio y 2 monitores en total; los pausados también cuentan.' }, 409);
   if (/DUPLICATE_MONITOR/.test(detail)) return c.json({ error: 'Ya tienes un monitor para esta URL.' }, 409);
-  if (/GLOBAL_CAPACITY/.test(detail)) return c.json({ error: 'La instalación de pruebas ha alcanzado sus 10 monitores. Este es un límite técnico global, independiente de tu plan.' }, 409);
+  if (/CREDENTIAL_CAPACITY/.test(detail)) return c.json({ error: 'Ya tienes cinco passkeys. Puedes recuperar el acceso con un código para sustituirlas.' }, 409);
+  if (/GLOBAL_CAPACITY/.test(detail)) return c.json({ error: 'La beta ha alcanzado sus 10 monitores de clientes compartidos. Este límite técnico se aplica además de las cuotas de cada plan.' }, 409);
   if (/CUSTOM_PLAN_REQUIRED/.test(detail)) return c.json({ error: 'El plan Business necesita cuotas personalizadas configuradas por contrato.' }, 409);
   if (/MAINTENANCE_OVERLAP/.test(detail)) return c.json({ error: 'Este horario coincide con otro mantenimiento del monitor.' }, 409);
   if (/MAINTENANCE_CAPACITY/.test(detail)) return c.json({ error: 'Puedes tener hasta cinco mantenimientos activos o programados por monitor.' }, 409);

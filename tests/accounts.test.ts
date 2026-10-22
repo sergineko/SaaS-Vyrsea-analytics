@@ -56,6 +56,32 @@ beforeEach(async () => {
 afterAll(async () => { release?.(); await mf?.dispose(); });
 
 describe.sequential('Owner approval and inactive Free accounts on actual Worker/D1', () => {
+  it('exempts only the owner from domain, monitor and trial quotas', async () => {
+    for(let i=0;i<12;i++)await db.prepare("INSERT INTO monitors(id,user_id,name,url,root_domain,next_check_at,created_at) VALUES(?,'owner',?,?,?,0,?)")
+      .bind(`owned-${i}`,`Service ${i}`,`https://domain${i}.com/`,`domain${i}.com`,now()).run();
+    const ownerData=await (await api('/dashboard')).json() as {limits:{domains:number|null;monitors:number|null;advancedDashboard:boolean;id:string}};
+    expect(ownerData.limits).toMatchObject({domains:null,monitors:null,advancedDashboard:true,id:'business'});
+    await monitor('free','customer-one');await monitor('free','customer-two');
+    await expect(monitor('free','customer-three')).rejects.toThrow(/MONITOR_CAPACITY/);
+    expect((await (await api('/owner/accounts')).json() as OwnerAccountsData).usage.monitors).toBe(2);
+  });
+  it('lets the owner configure Business, preserve approval and enforce the custom limits', async () => {
+    const input={planId:'business',domainLimit:2,monitorLimit:3,historyDaysLimit:45};
+    expect((await api('/owner/accounts/free/plan','PATCH',input,token('free'))).status).toBe(403);
+    expect((await api('/owner/accounts/free/plan','PATCH',{...input,isOwner:1})).status).toBe(400);
+    expect((await api('/owner/accounts/free/plan','PATCH',{planId:'business'})).status).toBe(400);
+    expect((await api('/owner/accounts/owner/plan','PATCH',input)).status).toBe(409);
+    expect((await api('/owner/accounts/free/plan','PATCH',input)).status).toBe(200);
+    expect(await user()).toMatchObject({plan_id:'business',is_owner:0,account_status:'active',domain_limit:2,monitor_limit:3,history_days_limit:45});
+    const paid=await (await api('/dashboard','GET',undefined,token('free'))).json() as {limits:unknown};
+    expect(paid.limits).toMatchObject({domains:2,monitors:3,historyDays:45,intervalSeconds:60});
+    for(let i=0;i<3;i++)await monitor('free',`custom-${i}`);
+    await expect(monitor('free','custom-four')).rejects.toThrow(/MONITOR_CAPACITY/);
+    expect((await api('/owner/accounts/free/plan','PATCH',{planId:'free'})).status).toBe(200);
+    expect(await count('monitors')).toBe(3);
+    expect((await user())!.is_owner).toBe(0);
+    await expect(monitor('free','another')).rejects.toThrow(/MONITOR_CAPACITY/);
+  });
   it('projects cadence costs without counting paused or suspended monitoring', async () => {
     await monitor('owner','paid'); await monitor('free','live'); await monitor('free','paused',1);
     const before=await (await api('/owner/accounts')).json() as OwnerAccountsData;

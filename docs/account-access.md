@@ -6,9 +6,9 @@ El MVP utiliza una beta con aprobación manual obligatoria. No existe un modo p�
 
 El usuario guarda su passkey y obtiene una sesión, pero la nueva cuenta siempre se crea como `pending`, tanto en desarrollo como en producción. Puede consultar su estado y cerrar sesión. El servidor bloquea el panel, el histórico y cualquier operación de monitores mientras no esté aprobada. Un trigger D1 también impide insertar monitores para una cuenta no habilitada. Turnstile sigue siendo obligatorio en producción.
 
-El propietario tiene la sección **Accesos y cuentas**. Muestra solicitudes, cuentas activas y suspendidas, fecha de uso, número de dominios y monitores, trabajos pendientes y consumo del máximo técnico de 10 monitores/100 cuentas. Puede aprobar, suspender y reactivar. Estas rutas verifican sesión, rol, estado activo, origen y entradas en cada solicitud. No permiten modificar planes, cuotas ni roles. Ningún propietario se puede suspender desde esas rutas.
+El propietario tiene la sección **Accesos y cuentas**. Muestra solicitudes, cuentas activas y suspendidas, fecha de uso, número de dominios y monitores, trabajos pendientes y consumo del máximo técnico de 10 monitores de clientes/100 cuentas. Puede aprobar, suspender y reactivar. Estas rutas verifican sesión, rol, estado activo, origen y entradas en cada solicitud. La ruta PATCH de plan permite asignar Free, Starter, Pro o Business y las cuotas personalizadas de Business; solo el propietario puede usarla. Nunca permite conceder el rol de propietario. Ningún propietario se puede suspender desde esas rutas.
 
-La aprobación no reserva monitores ni eleva los topes: Free conserva 1 dominio y 2 monitores; el máximo técnico global continúa en 10. Las cuentas suspendidas mantienen los monitores registrados, incluidos los pausados, y sus plazas. El propietario debe supervisar además las métricas de Cloudflare: las cuotas gratuitas se comparten con sus otras aplicaciones y un monitor Business por minuto consume más que uno Free cada 15 minutos.
+La aprobación no reserva monitores ni eleva los topes: Free conserva 1 dominio y 2 monitores; el máximo técnico compartido de clientes continúa en 10. La cuenta de propietario está exenta de cuotas de dominios y monitores, pero comparte recursos de infraestructura con la beta. Las cuentas suspendidas mantienen los monitores registrados, incluidos los pausados, y sus plazas. El propietario debe supervisar además las métricas de Cloudflare: las cuotas gratuitas se comparten con sus otras aplicaciones y un monitor Business por minuto consume más que uno Free cada 15 minutos.
 
 ## Actividad y suspensión
 
@@ -33,8 +33,10 @@ Registra personalmente tu passkey en el dominio definitivo. Desde un terminal au
 node scripts/grant-owner.mjs --remote --user-id UUID-DE-TU-CUENTA
 ```
 
-Para una cuenta local usa `--local`. El script exige un UUID y una configuración de producción existente; nunca selecciona una cuenta por orden o por ser la primera. Otorga Business sin facturación, 10 dominios/10 monitores y 90 días, dentro del techo global actual. No contacta con Dodo Payments ni añade tarjetas o suscripciones. El rol habilita funciones implementadas; no activa las integraciones aún pendientes (AWS/GCP, correo de alertas, webhooks, equipos o páginas de estado reales).
+Para una cuenta local usa `--local`. El script exige un UUID y una configuración de producción existente; nunca selecciona una cuenta por orden o por ser la primera. Otorga Business sin facturación, dominios y monitores sin límite de producto y 90 días de histórico. La API representa los dos máximos como null y D1 exime únicamente a is_owner=1, incluido el tope compartido de clientes. No se promete capacidad física infinita en Free. No contacta con Dodo Payments ni añade tarjetas o suscripciones. El rol habilita las seis secciones de la plataforma avanzada y el CSV de datos reales. Las sondas AWS/GCP, correo de alertas, webhooks, invitaciones de equipo y publicación de páginas de estado siguen pendientes; la vista previa de estado es privada.
 
 ## Verificación
 
 `tests/accounts.test.ts` ejecuta el Worker real con D1 y firmas WebAuthn: registro pendiente, controles de rol y origen, aprobación, cuotas, exclusión de lecturas como actividad, agrupación horaria, frontera de caducidad, exenciones, suspensión antes de la limpieza, colas antiguas, sondas en curso, reactivación y protección del propietario.
+
+Consulta también [Seguridad de acceso y recuperación](access-recovery.md) para preparar passkeys de respaldo y el kit antes de perder el acceso.

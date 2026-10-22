@@ -21,10 +21,11 @@ export const PLAN_CATALOG = [
 
 export type PlanId = typeof PLAN_CATALOG[number]['id'];
 export interface PlanLimits {
-  id: PlanId; name: string; domains: number; monitors: number; intervalSeconds: number; historyDays: number;
+  id: PlanId; name: string; domains: number | null; monitors: number | null; intervalSeconds: number; historyDays: number;
   advancedDashboard: boolean; multiProbe: boolean;
 }
 export const FREE_LIMITS: PlanLimits = { id: 'free', name: 'Free', domains: 1, monitors: 2, intervalSeconds: 900, historyDays: 7, advancedDashboard: false, multiProbe: false };
 export const intervalLabel = (seconds: number) => `${seconds / 60} ${seconds === 60 ? 'minuto' : 'minutos'}`;
 export const staleAfterSeconds = (intervalSeconds: number) => intervalSeconds * 3;
+export const quotaLabel = (maximum: number | null) => maximum === null ? 'Sin límite' : maximum.toLocaleString('es-ES');
 export const monthlyPrice = (price: number | null) => price === null ? 'Consultar precios' : `${price.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}/mes`;

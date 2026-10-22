@@ -138,6 +138,7 @@ export async function cleanup(env: Env, timestamp = nowSeconds()) {
   const statements = [
     ['sessions', 'expires_at', timestamp, 500],
     ['challenges', 'expires_at', timestamp, 1000],
+    ['recent_auth', 'expires_at', timestamp, 500],
     ['rate_limits', 'expires_at', timestamp, 3500],
   ] as const;
   await env.DB.batch(statements.map(([table, field, cutoff, limit]) => env.DB.prepare(`DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE ${field}<? LIMIT ${limit})`).bind(cutoff)));

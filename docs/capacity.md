@@ -8,7 +8,7 @@ El MVP agrupa hasta cuatro comprobaciones por mensaje, mantiene un lote entregad
 
 Cada consumidor hace como máximo cuatro sondas secuenciales: hasta 48 solicitudes externas en el peor caso de tres redirecciones por destino y dos consultas DNS por salto. Las llamadas internas a D1 tienen un límite separado; las cuatro comprobaciones ejecutan hasta 40 sentencias D1, dentro de las 50 del plan Free. El límite de CPU de producción se sigue supervisando: estas cuentas de operaciones no miden CPU ni garantizan latencia.
 
-Tres consumidores permiten procesar los tres mensajes del máximo actual de diez monitores sin serializar sus esperas de red. Cada transacción de resultados mantiene la barrera de slots y la comprobación de estado, cuenta y mantenimiento. Se prueba la entrega duplicada simultánea para no duplicar muestras, agregados o alertas.
+Tres consumidores permiten procesar los tres mensajes del lote actual de diez trabajos sin serializar sus esperas de red. Cada transacción de resultados mantiene la barrera de slots y la comprobación de estado, cuenta y mantenimiento. Se prueba la entrega duplicada simultánea para no duplicar muestras, agregados o alertas.
 
 ## D1 con mucho histórico
 
@@ -35,7 +35,7 @@ Ejemplos con **dos monitores activos por cuenta**, una sonda Cloudflare y sin re
 
 Workers Free incluye 10.000 operaciones diarias de Queues y 100.000 filas escritas diarias en D1, compartidas por la cuenta. Mil cuentas Free del ejemplo excederían D1 incluso con una sola fila por sonda, antes de contar índices, estado, reservas y agregados. **Optimizar no convierte estas cargas en gratuitas.** No se ha activado ningún plan de infraestructura de pago.
 
-El programador actual reserva como máximo diez trabajos por minuto: su límite teórico es 14.400 reservas al día, antes de errores, CPU y cuotas. Es independiente de la capacidad de las colas. El máximo global de diez monitores y el alta supervisada siguen activos. Esta instalación no admite 100 o 1.000 cuentas con sus monitores, aunque pudiera guardar sus registros.
+El programador actual reserva como máximo diez trabajos por minuto: su límite teórico es 14.400 reservas al día, antes de errores, CPU y cuotas. Es independiente de la capacidad de las colas. El máximo compartido de diez monitores de clientes y el alta supervisada siguen activos. El propietario está exento de cuotas de registro, pero no de la capacidad finita de ejecución: su carga también entra en la proyección de consumo. Esta instalación no admite 100 o 1.000 cuentas con sus monitores, aunque pudiera guardar sus registros.
 
 ## Cambios necesarios antes de ampliar la beta
 
