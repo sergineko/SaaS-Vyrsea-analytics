@@ -4,30 +4,30 @@ import { cleanup, consume, dispatchPending, recordResult, reserveCheck, schedule
 import type { CheckJob, Env,QueuePayload } from '../worker/env';
 import type { ProbeResult } from '../worker/probe';
 import { runRetentionJob } from '../worker/retention-job';
+import {measureD1} from './d1-metrics';
+import {dashboardStatistics} from '../worker/statistics';
 export default {
   ...worker,
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    if(new URL(request.url).pathname==='/__test/statistics') {
+      const {userId,ids,since,days,timestamp}=await request.json() as {userId:string;ids:string[];since:number;days:number;timestamp:number};
+      const metrics=measureD1(env.DB),body=await dashboardStatistics({...env,DB:metrics.DB},userId,ids,since,days,timestamp);
+      return Response.json({body,...metrics.report()});
+    }
+    if(new URL(request.url).pathname==='/__test/query-metrics') {
+      const {path}=await request.json() as {path:string};
+      if(!path.startsWith('/api/'))return new Response(null,{status:400});
+      const metrics=measureD1(env.DB),response=await worker.fetch(new Request(new URL(path,env.APP_ORIGIN),{headers:request.headers}),{...env,DB:metrics.DB},ctx);
+      return Response.json({status:response.status,body:await response.json(),...metrics.report()});
+    }
     if (new URL(request.url).pathname === '/__test/storage-cycle') {
       const {timestamp}=await request.json() as {timestamp:number};
-      const samples:{sql:string;writes:number;reads:number}[]=[];
-      const statements=new WeakMap<object,string>();
-      const capture=(sql:string,result:D1Result)=>{samples.push({sql:sql.replace(/\s+/g,' ').slice(0,90),writes:result.meta.rows_written??0,reads:result.meta.rows_read??0});return result;};
-      function wrap(statement:D1PreparedStatement,sql:string):D1PreparedStatement {
-        const proxy=new Proxy(statement,{get(target,property){
-          if(property==='bind')return (...values:unknown[])=>wrap(target.bind(...values),sql);
-          if(property==='run'||property==='all')return async()=>capture(sql,await target[property]());
-          const value=Reflect.get(target,property);return typeof value==='function'?value.bind(target):value;
-        }});statements.set(proxy,sql);return proxy;
-      }
+      const metrics=measureD1(env.DB);
       const messages:QueuePayload[]=[];
-      const instrumented={...env,DB:new Proxy(env.DB,{get(target,property){
-        if(property==='prepare')return (sql:string)=>wrap(target.prepare(sql),sql);
-        if(property==='batch')return async(items:D1PreparedStatement[])=>{const results=await target.batch(items);results.forEach((result,index)=>capture(statements.get(items[index])??'batch',result));return results;};
-        const value=Reflect.get(target,property);return typeof value==='function'?value.bind(target):value;
-      }}),CHECK_QUEUE:{sendBatch:async(batch:MessageSendRequest<QueuePayload>[])=>{messages.push(...batch.map(item=>item.body));}} as unknown as Env['CHECK_QUEUE']};
+      const instrumented={...env,DB:metrics.DB,CHECK_QUEUE:{sendBatch:async(batch:MessageSendRequest<QueuePayload>[])=>{messages.push(...batch.map(item=>item.body));}} as unknown as Env['CHECK_QUEUE']};
       await schedule(instrumented,timestamp);
       for(const payload of messages)for(const job of payload.jobs)await recordResult(instrumented,job,{ok:true,statusCode:200,responseMs:20,error:null},timestamp+1);
-      return Response.json({samples,writes:samples.reduce((n,row)=>n+row.writes,0),checks:messages.reduce((n,p)=>n+p.jobs.length,0)});
+      return Response.json({...metrics.report(),checks:messages.reduce((n,p)=>n+p.jobs.length,0)});
     }
     if (new URL(request.url).pathname === '/__test/retention-run') {
       const {start,timestamp,withSchedule}=await request.json() as {start:boolean;timestamp:number;withSchedule?:boolean};

@@ -15,6 +15,7 @@ import { intervalLabel } from '../shared/plans';
 import { maintenance } from './maintenance';
 import { denyInactive } from './accounts';
 import {statusPages} from './status-pages';
+import {availabilityStatsSQL,dashboardStatistics} from './statistics';
 
 export const api = new Hono<AppEnv>();
 api.use('*', async (c, next) => {
@@ -42,14 +43,11 @@ api.get('/dashboard', async c => {
   if (c.req.query('view') === 'advanced' && !limits.advancedDashboard) throw new HTTPException(403, { message: 'La plataforma avanzada es exclusiva de Pro / Agencia y Business.' });
   const days = z.coerce.number().int().min(1).max(365).parse(c.req.query('days') ?? '1');
   if (days > limits.historyDays) throw new HTTPException(403, { message: `Tu plan incluye ${limits.historyDays} días de histórico.` });
-  const since = Math.max(nowSeconds() - limits.historyDays * 86400, Math.floor(nowSeconds() / 3600) * 3600 - (days * 24 - 1) * 3600);
-  const [items, stats, incidents, notifications, windows] = await Promise.all([
-    drizzle(c.env.DB).select().from(monitors).where(eq(monitors.userId, userId)).all(),
-    c.env.DB.prepare(`SELECT h.monitor_id AS monitorId,?+CAST((h.hour-?)/? AS INTEGER)*? AS hour,
-      SUM(h.total) AS total,SUM(h.successful) AS successful,SUM(h.total_ms) AS totalMs
-      FROM hourly_stats h JOIN monitors m ON m.id=h.monitor_id WHERE m.user_id=? AND h.hour>=?
-      GROUP BY h.monitor_id,CAST((h.hour-?)/? AS INTEGER) ORDER BY hour`)
-      .bind(since,since,days*3600,days*3600,userId,since,since,days*3600).all(),
+  const timestamp=nowSeconds();
+  const since = Math.max(timestamp - limits.historyDays * 86400, Math.floor(timestamp / 3600) * 3600 - (days * 24 - 1) * 3600);
+  const items=await drizzle(c.env.DB).select().from(monitors).where(eq(monitors.userId,userId)).all();
+  const [statistics, incidents, notifications, windows] = await Promise.all([
+    dashboardStatistics(c.env,userId,items.map(item=>item.id),since,days,timestamp),
     c.env.DB.prepare(`SELECT i.id,i.monitor_id AS monitorId,m.name AS monitorName,i.opened_at AS openedAt,i.resolved_at AS resolvedAt,i.reason
       FROM incidents i JOIN monitors m ON m.id=i.monitor_id WHERE m.user_id=? AND (i.resolved_at IS NULL OR i.resolved_at>=?) ORDER BY i.opened_at DESC LIMIT 50`).bind(userId, since).all(),
     c.env.DB.prepare(`SELECT id,monitor_id AS monitorId,kind,message,created_at AS createdAt,read_at AS readAt
@@ -59,8 +57,9 @@ api.get('/dashboard', async c => {
       WHERE m.user_id=? AND MIN(w.ends_at,COALESCE(w.cancelled_at,w.ends_at))>=? ORDER BY CASE WHEN w.cancelled_at IS NULL AND w.ends_at>? THEN 0 ELSE 1 END,w.starts_at DESC LIMIT 100`)
       .bind(userId,since,nowSeconds()).all(),
   ]);
-  return c.json({ user: c.get('user'), monitors: items, stats: stats.results, incidents: incidents.results, notifications: notifications.results,
-    maintenance: windows.results, limits, windowDays: days, activeProbeProviders: ['cloudflare'], multiProbeActive: false, serverTime: nowSeconds() });
+  return c.json({ user: c.get('user'), monitors: items, stats: statistics.stats, incidents: incidents.results, notifications: notifications.results,
+    maintenance: windows.results, limits, windowDays: days, activeProbeProviders: ['cloudflare'], multiProbeActive: false, serverTime: timestamp,
+    historyAsOf:statistics.historyAsOf,historyCacheSeconds:300 });
 });
 api.route('/',maintenance);
 api.route('/status-pages',statusPages);
@@ -71,7 +70,7 @@ api.get('/monitors/:id/availability',async c=>{
   if(days!==undefined){const n=z.coerce.number().int().min(1).max(365).parse(days);if(n>plan.historyDays)throw new HTTPException(403,{message:`Tu plan conserva ${plan.historyDays} días.`});from=Math.max(earliest,hour-(n*24-1)*3600);}
   else{from=z.coerce.number().int().min(0).parse(c.req.query('from'));to=z.coerce.number().int().min(0).parse(c.req.query('to'));if(from<earliest)throw new HTTPException(403,{message:`El inicio debe estar dentro de los ${plan.historyDays} días de tu plan.`});if(from%3600||to%3600||from>=to||from>now||to>now+3600)throw new HTTPException(400,{message:'Elige un intervalo válido, con precisión de una hora y sin fechas futuras.'});to=Math.min(to,now);}
   const last24From=hour-23*3600;
-  const rows=await c.env.DB.prepare('SELECT monitor_id AS monitorId,hour,total,successful,total_ms AS totalMs FROM hourly_stats WHERE monitor_id=? AND hour>=? AND hour<=? ORDER BY hour').bind(monitor.id,Math.min(last24From,from),hour).all();
+  const rows=await c.env.DB.prepare(availabilityStatsSQL).bind(monitor.id,from,to,monitor.id,last24From,hour,from,to).all();
   return c.json({from,to,serverTime:now,stats:rows.results.filter(row=>Number(row.hour)>=from&&Number(row.hour)<to),last24:rows.results.filter(row=>Number(row.hour)>=last24From),last24From});
 });
 api.patch('/monitors/:id/probes',async c=>{

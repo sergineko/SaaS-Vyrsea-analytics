@@ -34,7 +34,7 @@ async function register() {
 
 beforeAll(async () => {
   await build({ entryPoints: ['tests/worker-harness.ts'], bundle: true, format: 'esm', platform: 'neutral', mainFields: ['module', 'main'], conditions: ['workerd', 'worker', 'browser'], external: ['node:*', 'cloudflare:*'], outfile: '.test-build/accounts-worker.mjs', logLevel: 'silent' });
-  mf = new Miniflare({ modules: true, scriptPath: '.test-build/accounts-worker.mjs', compatibilityDate: '2026-07-01', compatibilityFlags: ['nodejs_compat'],
+  mf = new Miniflare({cachePersist:`.test-build/ac-${process.pid}`, modules: true, scriptPath: '.test-build/accounts-worker.mjs', compatibilityDate: '2026-07-01', compatibilityFlags: ['nodejs_compat'],
     bindings: { APP_ORIGIN: origin }, d1Databases: { DB: 'accounts-db' }, queueProducers: { CHECK_QUEUE: 'account-checks' },
     outboundService: async (request: {url: string}) => {
       if (request.url.includes('cloudflare-dns.com')) return Response.json({ Status: 0, Answer: [{ type: 1, data: '1.1.1.1' }] });

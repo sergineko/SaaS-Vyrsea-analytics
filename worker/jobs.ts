@@ -13,21 +13,25 @@ export async function reserveCheck(env: Env, monitorId: string, timestamp = nowS
 async function reserveChecks(env: Env, monitorIds: string[], timestamp: number, cadenceBase = timestamp) {
   if (!monitorIds.length) return [];
   const slot = Math.floor(timestamp / INTERVAL_SECONDS) * INTERVAL_SECONDS;
-  const result = await env.DB.batch(monitorIds.flatMap(monitorId => [
+  const ids = JSON.stringify(monitorIds);
+  // Three set-based statements, regardless of the number of due monitors.
+  // Keep the reservation, maintenance guard and cadence update in one transaction.
+  const result = await env.DB.batch<{monitorId:string}>([
     env.DB.prepare(`UPDATE monitors SET next_check_at=MAX(next_check_at,(SELECT MAX(w.ends_at) FROM maintenance_windows w
       WHERE w.monitor_id=monitors.id AND w.cancelled_at IS NULL AND w.starts_at<=? AND w.ends_at>?)),
       failures=CASE WHEN status='down' THEN failures ELSE 0 END,status=CASE WHEN status='degraded' THEN 'pending' ELSE status END
-      WHERE id=? AND paused=0 AND next_check_at<=? AND ${accountEligible(timestamp)} AND EXISTS(SELECT 1 FROM maintenance_windows w WHERE w.monitor_id=monitors.id
-      AND w.cancelled_at IS NULL AND w.starts_at<=? AND w.ends_at>?)`).bind(timestamp,timestamp,monitorId,timestamp,timestamp,timestamp),
+      WHERE id IN (SELECT value FROM json_each(?)) AND paused=0 AND next_check_at<=? AND ${accountEligible(timestamp)} AND EXISTS(SELECT 1 FROM maintenance_windows w WHERE w.monitor_id=monitors.id
+      AND w.cancelled_at IS NULL AND w.starts_at<=? AND w.ends_at>?)`).bind(timestamp,timestamp,ids,timestamp,timestamp,timestamp),
     env.DB.prepare(`INSERT OR IGNORE INTO check_jobs(id,monitor_id,slot,created_at)
-      SELECT id || ':' || CAST(? AS INTEGER),id,?,? FROM monitors WHERE id=? AND paused=0 AND next_check_at<=? AND last_slot<?
-      AND ${accountEligible(timestamp)} AND ${slotEligible(slot)}`)
-      .bind(slot, slot, timestamp, monitorId, timestamp, slot),
-    env.DB.prepare(`UPDATE monitors SET next_check_at=?+(SELECT p.interval_seconds FROM plan_limits p JOIN users u ON u.plan_id=p.id WHERE u.id=monitors.user_id) WHERE id=? AND paused=0 AND next_check_at<=?
+      SELECT id || ':' || CAST(? AS INTEGER),id,?,? FROM monitors WHERE id IN (SELECT value FROM json_each(?)) AND paused=0 AND next_check_at<=? AND last_slot<?
+      AND ${accountEligible(timestamp)} AND ${slotEligible(slot)} RETURNING monitor_id AS monitorId`)
+      .bind(slot, slot, timestamp, ids, timestamp, slot),
+    env.DB.prepare(`UPDATE monitors SET next_check_at=?+(SELECT p.interval_seconds FROM plan_limits p JOIN users u ON u.plan_id=p.id WHERE u.id=monitors.user_id) WHERE id IN (SELECT value FROM json_each(?)) AND paused=0 AND next_check_at<=?
       AND EXISTS(SELECT 1 FROM check_jobs WHERE id=monitors.id || ':' || CAST(? AS INTEGER))`)
-      .bind(cadenceBase, monitorId, timestamp, slot),
-  ]));
-  return monitorIds.map((_, index) => result[index * 3 + 1].meta.changes > 0);
+      .bind(cadenceBase, ids, timestamp, slot),
+  ]);
+  const reserved = new Set(result[1].results.map(row => row.monitorId));
+  return monitorIds.map(id => reserved.has(id));
 }
 
 export async function dispatchPending(env: Env, timestamp = nowSeconds()) {
@@ -68,13 +72,14 @@ export async function recordResult(env: Env, job: CheckJob, result: ProbeResult,
   // A single D1 transaction: the monitor's last_slot changes LAST, guarding every statement.
   // D1 batches are atomic: concurrent duplicate deliveries still cannot write a slot twice.
   await env.DB.batch([
-    // A planned gap breaks consecutive failures; an already-open incident remains open.
-    env.DB.prepare(`UPDATE monitors SET failures=CASE WHEN status='down' THEN failures ELSE 0 END,
+    // A planned gap breaks consecutive failures. A success resets them in the
+    // final monitor update already; an open incident still recovers below.
+    ...(!result.ok ? [env.DB.prepare(`UPDATE monitors SET failures=CASE WHEN status='down' THEN failures ELSE 0 END,
       status=CASE WHEN status='degraded' THEN 'pending' ELSE status END WHERE id=? AND last_slot<? AND paused=0
       AND ${accountEligible(timestamp)} AND ${slotEligible(job.slot)}
       AND EXISTS(SELECT 1 FROM maintenance_windows w WHERE w.monitor_id=monitors.id AND w.starts_at<=?
       AND MIN(w.ends_at,COALESCE(w.cancelled_at,w.ends_at))>COALESCE(last_checked_at,created_at)
-      AND MIN(w.ends_at,COALESCE(w.cancelled_at,w.ends_at))>w.starts_at)`).bind(job.monitorId,job.slot,timestamp),
+      AND MIN(w.ends_at,COALESCE(w.cancelled_at,w.ends_at))>w.starts_at)`).bind(job.monitorId,job.slot,timestamp)] : []),
     env.DB.prepare(`INSERT OR IGNORE INTO checks(id,monitor_id,checked_at,ok,status_code,response_ms,error)
       SELECT ?,id,?,?,?,?,? FROM monitors WHERE id=? AND last_slot<? AND paused=0 ${outsideMaintenance}`)
       .bind(id, timestamp, result.ok ? 1 : 0, result.statusCode, result.responseMs, result.error, job.monitorId, job.slot,...maintenanceTimes),
@@ -82,20 +87,22 @@ export async function recordResult(env: Env, job: CheckJob, result: ProbeResult,
       SELECT id,?,1,?,? FROM monitors WHERE id=? AND last_slot<? AND paused=0 ${outsideMaintenance}
       ON CONFLICT(monitor_id,hour) DO UPDATE SET total=total+1,successful=successful+excluded.successful,total_ms=total_ms+excluded.total_ms`)
       .bind(hour, result.ok ? 1 : 0, result.responseMs, job.monitorId, job.slot,...maintenanceTimes),
-    env.DB.prepare(`INSERT OR IGNORE INTO incidents(id,monitor_id,opened_at,reason)
+    // Branch only on the immutable probe result. Monitor state must still be
+    // checked inside this transaction, including concurrent/out-of-order results.
+    ...(!result.ok ? [env.DB.prepare(`INSERT OR IGNORE INTO incidents(id,monitor_id,opened_at,reason)
       SELECT ?,id,?,? FROM monitors WHERE id=? AND last_slot<? AND paused=0 AND failures>=1 AND status!='down' AND ?=0 ${outsideMaintenance}`)
       .bind(id, timestamp, result.error ?? 'Error HTTP', job.monitorId, job.slot, result.ok ? 1 : 0,...maintenanceTimes),
     env.DB.prepare(`INSERT OR IGNORE INTO notifications(id,user_id,monitor_id,kind,message,created_at)
       SELECT ? || ':down',user_id,id,'down',name || ' no responde. Dos fallos consecutivos confirmados.',?
       FROM monitors WHERE id=? AND last_slot<? AND paused=0 AND failures>=1 AND status!='down' AND ?=0 ${outsideMaintenance}`)
-      .bind(id, timestamp, job.monitorId, job.slot, result.ok ? 1 : 0,...maintenanceTimes),
-    env.DB.prepare(`INSERT OR IGNORE INTO notifications(id,user_id,monitor_id,kind,message,created_at)
+      .bind(id, timestamp, job.monitorId, job.slot, result.ok ? 1 : 0,...maintenanceTimes)] : []),
+    ...(result.ok ? [env.DB.prepare(`INSERT OR IGNORE INTO notifications(id,user_id,monitor_id,kind,message,created_at)
       SELECT ? || ':up',user_id,id,'up',name || ' vuelve a estar disponible.',?
       FROM monitors WHERE id=? AND last_slot<? AND paused=0 AND status='down' AND ?=1 ${outsideMaintenance}`)
       .bind(id, timestamp, job.monitorId, job.slot, result.ok ? 1 : 0,...maintenanceTimes),
     env.DB.prepare(`UPDATE incidents SET resolved_at=? WHERE monitor_id=? AND resolved_at IS NULL AND ?=1
       AND EXISTS(SELECT 1 FROM monitors WHERE id=? AND last_slot<? AND paused=0 ${outsideMaintenance})`)
-      .bind(timestamp, job.monitorId, result.ok ? 1 : 0, job.monitorId, job.slot,...maintenanceTimes),
+      .bind(timestamp, job.monitorId, result.ok ? 1 : 0, job.monitorId, job.slot,...maintenanceTimes)] : []),
     env.DB.prepare(`UPDATE monitors SET status=CASE WHEN ?=1 THEN 'up' WHEN failures>=1 THEN 'down' ELSE 'degraded' END,
       failures=CASE WHEN ?=1 THEN 0 ELSE failures+1 END,last_checked_at=?,last_status_code=?,last_response_ms=?,last_error=?,last_slot=?
       WHERE id=? AND last_slot<? AND paused=0 ${outsideMaintenance}`)

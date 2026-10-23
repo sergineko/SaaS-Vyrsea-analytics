@@ -24,7 +24,7 @@ async function dashboard() { return await (await api('/dashboard')).json() as Da
 
 beforeAll(async () => {
   await build({ entryPoints: ['tests/worker-harness.ts'], bundle: true, format: 'esm', platform: 'neutral', mainFields: ['module', 'main'], conditions: ['workerd', 'worker', 'browser'], external: ['node:*', 'cloudflare:*'], outfile: '.test-build/worker.mjs', logLevel: 'silent' });
-  mf = new Miniflare({ modules: true, scriptPath: '.test-build/worker.mjs', compatibilityDate: '2026-07-01', compatibilityFlags: ['nodejs_compat'],
+  mf = new Miniflare({cachePersist:`.test-build/in-${process.pid}`, modules: true, scriptPath: '.test-build/worker.mjs', compatibilityDate: '2026-07-01', compatibilityFlags: ['nodejs_compat'],
     bindings: { APP_ORIGIN: origin }, d1Databases: { DB: 'test-db' }, queueProducers: { CHECK_QUEUE: 'test-checks' },
     queueConsumers: { 'test-checks': { maxBatchSize: 1, maxBatchTimeout: 0.01 } },
     outboundService: async (request: { url: string }) => {

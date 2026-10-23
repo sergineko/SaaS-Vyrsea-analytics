@@ -10,6 +10,9 @@ import {staleAfterSeconds} from '../shared/plans';
 type Row={id:string;user_id:string;title:string;description:string;accent:string;theme:'light'|'dark';monitor_ids:string;published:number;updated_at:number};
 const map=(row:Row):StatusPage=>({id:row.id,title:row.title,description:row.description,accent:row.accent,theme:row.theme,monitorIds:JSON.parse(row.monitor_ids),published:Boolean(row.published),updatedAt:row.updated_at});
 const input=z.object({title:z.string().trim().min(1).max(80),description:z.string().trim().max(300),accent:z.string().regex(/^#[a-f0-9]{6}$/i),theme:z.enum(['light','dark']),monitorIds:z.array(z.string().uuid()).min(1).max(100),published:z.boolean()}).strict();
+async function invalidatePublicPage(origin:string,id:string){
+  try{await(await caches.open('vyrsea-public-status-v1')).delete(new Request(`${origin}/api/public/status/${id}`));}catch{/* Other edge locations expire within sixty seconds. */}
+}
 export const statusPages=new Hono<AppEnv>();
 statusPages.use('*',async(c,next)=>{if(!(await accountPlan(c.env,c.get('user').id)).advancedDashboard)throw new HTTPException(403,{message:'Las páginas de estado requieren Pro / Agencia o Business.'});await next();});
 statusPages.get('/',async c=>{const rows=await c.env.DB.prepare('SELECT * FROM status_pages WHERE user_id=? ORDER BY updated_at DESC LIMIT 5').bind(c.get('user').id).all<Row>();return c.json(rows.results.map(map));});
@@ -25,7 +28,14 @@ statusPages.put('/:id',async c=>{
   if(!await c.env.DB.prepare('SELECT id FROM status_pages WHERE id=? AND user_id=?').bind(id,userId).first())throw new HTTPException(404,{message:'Página no encontrada.'});
   const ids=[...new Set(value.monitorIds)],found=await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM monitors WHERE user_id=? AND id IN (SELECT value FROM json_each(?))`).bind(userId,JSON.stringify(ids)).first<{n:number}>();if(found?.n!==ids.length)throw new HTTPException(400,{message:'Selecciona monitores de tu cuenta.'});
   await c.env.DB.prepare('UPDATE status_pages SET title=?,description=?,accent=?,theme=?,monitor_ids=?,published=?,updated_at=? WHERE id=? AND user_id=?').bind(value.title,value.description,value.accent,value.theme,JSON.stringify(ids),Number(value.published),nowSeconds(),id,userId).run();
-  try{await(await caches.open('vyrsea-public-status-v1')).delete(new Request(`${c.env.APP_ORIGIN}/api/public/status/${id}`));}catch{/* Other edge locations expire within sixty seconds. */}
+  await invalidatePublicPage(c.env.APP_ORIGIN,id);
+  return c.json({ok:true});
+});
+statusPages.delete('/:id',async c=>{
+  const id=z.string().uuid().parse(c.req.param('id'));
+  const result=await c.env.DB.prepare('DELETE FROM status_pages WHERE id=? AND user_id=?').bind(id,c.get('user').id).run();
+  if(!result.meta.changes)throw new HTTPException(404,{message:'Página no encontrada.'});
+  await invalidatePublicPage(c.env.APP_ORIGIN,id);
   return c.json({ok:true});
 });
 export const publicStatus=new Hono<AppEnv>();

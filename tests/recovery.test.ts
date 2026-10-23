@@ -35,7 +35,7 @@ async function login(key:ReturnType<typeof authenticator>){
 }
 beforeAll(async()=>{
   await build({entryPoints:['worker/index.ts'],bundle:true,format:'esm',platform:'neutral',mainFields:['module','main'],conditions:['workerd','worker','browser'],external:['node:*','cloudflare:*'],outfile:'.test-build/recovery-worker.mjs',logLevel:'silent'});
-  mf=new Miniflare({modules:true,scriptPath:'.test-build/recovery-worker.mjs',compatibilityDate:'2026-07-01',compatibilityFlags:['nodejs_compat'],bindings:{APP_ORIGIN:origin},d1Databases:{DB:'recovery-db'},queueProducers:{CHECK_QUEUE:'recovery-checks'}});
+  mf=new Miniflare({cachePersist:`.test-build/re-${process.pid}`,modules:true,scriptPath:'.test-build/recovery-worker.mjs',compatibilityDate:'2026-07-01',compatibilityFlags:['nodejs_compat'],bindings:{APP_ORIGIN:origin},d1Databases:{DB:'recovery-db'},queueProducers:{CHECK_QUEUE:'recovery-checks'}});
   db=await mf.getD1Database('DB') as unknown as D1Database;
   for(const file of readdirSync('migrations').filter(file=>file.endsWith('.sql')).sort())await db.batch(readFileSync(`migrations/${file}`,'utf8').split(/\n(?=CREATE |PRAGMA |ALTER |DROP |INSERT |UPDATE )/).map(sql=>db.prepare(sql.trim())));
 });

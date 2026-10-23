@@ -63,6 +63,19 @@ describe.sequential('Workspace tools on real Worker and D1',()=>{
   const html=statusPageHTML({title:'</title><script>alert(1)</script>',description:'<img src=x onerror=alert(1)>',accent:'red;display:none',theme:'dark'},'https://vyrsea.com/api/public/status/a');
   expect(html).not.toContain('<script>alert(1)');expect(html).toContain('&lt;script&gt;');expect(html).not.toContain('<img');expect(html).not.toContain('red;display:none');expect(html).toContain('credentials:\'omit\'');expect(html).toContain('textContent=service.name');
  });
+ it('deletes only owned status pages, revokes public access and frees a page slot',async()=>{
+  const value={title:'Delete this page',description:'',accent:'#187356',theme:'light',monitorIds:[ids.pro],published:true};
+  const pages:string[]=[];for(let i=0;i<5;i++){const result=await api('/status-pages','POST',value,'pro');expect(result.status).toBe(201);pages.push((await result.json() as {id:string}).id);}
+  expect((await api('/status-pages','POST',value,'pro')).status).toBe(409);
+  expect((await publicAPI(pages[0])).status).toBe(200);
+  expect((await api('/status-pages/'+pages[0],'DELETE')).status).toBe(404);
+  expect((await api('/status-pages/'+pages[0],'DELETE',{},'free')).status).toBe(403);
+  expect((await api('/status-pages/'+pages[0],'DELETE',{},'pro')).status).toBe(200);
+  expect((await publicAPI(pages[0])).status).toBe(404);expect((await publicAPI(pages[0],'/view')).status).toBe(404);
+  expect((await api('/status-pages/'+pages[0],'DELETE',{},'pro')).status).toBe(404);
+  expect((await db.prepare('SELECT COUNT(*) AS n FROM monitors WHERE id=?').bind(ids.pro).first())!.n).toBe(1);
+  expect((await api('/status-pages','POST',value,'pro')).status).toBe(201);
+ });
  it('creates Business with custom limits and a one-use invitation, without billing or credentials',async()=>{
   expect((await api('/owner/business-accounts','POST',{},'pro')).status).toBe(403);
   const created=await createBusiness(),stored=await db.prepare('SELECT * FROM users WHERE id=?').bind(created.id).first();expect(stored).toMatchObject({plan_id:'business',is_owner:0,monitor_limit:15,history_days_limit:45});

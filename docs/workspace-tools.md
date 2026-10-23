@@ -9,7 +9,7 @@
 
 El editor de la plataforma avanzada guarda título, descripción, color, tema claro/oscuro y servicios seleccionados. Cinco páginas por cuenta y cien servicios por página durante la beta. Se crean como borrador salvo publicación explícita. No se publica ninguna página automáticamente al desplegar.
 
-API autenticada `/api/status-pages`: GET lista, POST crea y PUT `/:id` guarda. Requiere cuenta activa y plataforma avanzada; cada monitor se comprueba contra el titular. La página pertenece a su cuenta y no se puede editar desde otra.
+API autenticada `/api/status-pages`: GET lista, POST crea, PUT `/:id` guarda y DELETE `/:id` elimina. Requiere cuenta activa y plataforma avanzada; cada monitor se comprueba contra el titular. La página pertenece a su cuenta y no se puede editar o borrar desde otra. El editor pide confirmación antes del borrado; conserva monitores e histórico y libera una de las cinco plazas. Se invalida la caché de la ubicación actual; en otras ubicaciones el enlace y las inserciones pueden tardar hasta 60 segundos en dejar de mostrar datos.
 
 `/api/public/status/:id` devuelve únicamente nombres elegidos, estado, disponibilidad y bloques de 24 h. Excluye URL, errores internos, ID del usuario/monitor y contratos. La página debe estar publicada y su titular activo con Pro/Business (o propietario). La caché pública de 60 segundos reduce lecturas y no escribe en D1. Una despublicación o suspensión puede tardar hasta 60 segundos entre ubicaciones edge. No se garantiza indexación; se sirve `noindex`.
 
@@ -23,4 +23,6 @@ El propietario puede crear una cuenta Business sin passkey, con dominios, monito
 
 El contrato guarda empresa, email de contacto, importe EUR en céntimos, periodicidad y notas. Es un borrador privado para contratar **Vyrsea**, sin factura ni aceptación de condiciones. No crea productos o suscripciones Dodo, no envía correos y no cobra. Dodo permanece deshabilitado. Las invitaciones Business son distintas de las invitaciones de equipo, que siguen pendientes de implementar.
 
-Email de alertas y webhooks notifican incidencias de monitores; no gestionan cobros de los negocios de los clientes. Dodo es exclusivamente la futura facturación de suscripciones a Vyrsea. El panel explica los ejemplos y el estado operativo de cada integración.
+Email de alertas y webhooks notifican incidencias de monitores; no gestionan cobros de los negocios de los clientes. Integraciones solo muestra avisos y automatización. Dodo es exclusivamente la futura facturación de suscripciones a Vyrsea, en **Plan y configuración → Suscripción**, con contratación y portal deshabilitados. No hay una suscripción externa ni facturas simuladas. El propietario conserva acceso sin pagos; las cuotas y planes se siguen validando en el servidor.
+
+Plan y configuración separa Plan y uso, Suscripción y Seguridad. Muestra las cuotas independientes con disponibilidad restante, frecuencia, histórico y plataforma; la comparación de planes se despliega bajo demanda. Seguridad carga su módulo y sus consultas al abrir esa pestaña. En configuración se solicita solo la vista de 24 horas una vez y se detiene el refresco automático de monitorización hasta volver a otra sección.

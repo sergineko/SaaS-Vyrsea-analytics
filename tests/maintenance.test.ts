@@ -14,7 +14,7 @@ async function count(table:string){return(await db.prepare(`SELECT COUNT(*) AS n
 async function record(slot:number,timestamp:number,ok=false){return mf.dispatchFetch(`${origin}/__test/result`,{method:'POST',body:JSON.stringify({job:{monitorId:'monitor',slot},timestamp,result:{ok,statusCode:ok?200:503,responseMs:10,error:ok?null:'HTTP 503'}})});}
 beforeAll(async()=>{
   await build({entryPoints:['tests/worker-harness.ts'],bundle:true,format:'esm',platform:'neutral',mainFields:['module','main'],conditions:['workerd','worker','browser'],external:['node:*','cloudflare:*'],outfile:'.test-build/maintenance-worker.mjs',logLevel:'silent'});
-  mf=new Miniflare({modules:true,scriptPath:'.test-build/maintenance-worker.mjs',compatibilityDate:'2026-07-01',compatibilityFlags:['nodejs_compat'],bindings:{APP_ORIGIN:origin},d1Databases:{DB:'maintenance-db'},queueProducers:{CHECK_QUEUE:'maintenance-checks'},outboundService:async(request:{url:string})=>{
+  mf=new Miniflare({cachePersist:`.test-build/ma-${process.pid}`,modules:true,scriptPath:'.test-build/maintenance-worker.mjs',compatibilityDate:'2026-07-01',compatibilityFlags:['nodejs_compat'],bindings:{APP_ORIGIN:origin},d1Databases:{DB:'maintenance-db'},queueProducers:{CHECK_QUEUE:'maintenance-checks'},outboundService:async(request:{url:string})=>{
     if(request.url.includes('cloudflare-dns.com'))return Response.json({Status:0,Answer:[{type:1,data:'1.1.1.1'}]});targetCalls++;if(targetGate)await targetGate;return new Response('Fixture',{status:503});
   }});
   db=await mf.getD1Database('DB') as unknown as D1Database;

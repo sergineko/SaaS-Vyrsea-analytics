@@ -21,7 +21,7 @@ async function reserve(plan:string,timestamp:number) {
 }
 beforeAll(async()=>{
   await build({entryPoints:['tests/worker-harness.ts'],bundle:true,format:'esm',platform:'neutral',mainFields:['module','main'],conditions:['workerd','worker','browser'],external:['node:*','cloudflare:*'],outfile:'.test-build/plan-worker.mjs',logLevel:'silent'});
-  mf=new Miniflare({modules:true,scriptPath:'.test-build/plan-worker.mjs',compatibilityDate:'2026-07-01',compatibilityFlags:['nodejs_compat'],bindings:{APP_ORIGIN:origin},d1Databases:{DB:'plan-db'},queueProducers:{CHECK_QUEUE:'plan-checks'}});
+  mf=new Miniflare({cachePersist:`.test-build/pl-${process.pid}`,modules:true,scriptPath:'.test-build/plan-worker.mjs',compatibilityDate:'2026-07-01',compatibilityFlags:['nodejs_compat'],bindings:{APP_ORIGIN:origin},d1Databases:{DB:'plan-db'},queueProducers:{CHECK_QUEUE:'plan-checks'}});
   db=await mf.getD1Database('DB') as unknown as D1Database;
   await migrate('0001_initial.sql'); await migrate('0002_domain_plans.sql');
   // Existing accounts, credentials and history must survive the plan-table replacement.
@@ -39,6 +39,15 @@ beforeAll(async()=>{
     await db.prepare('INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)').bind(hash,plan,now+3600).run();
     if(plan!=='business')await db.prepare('INSERT INTO monitors(id,user_id,name,url,root_domain,next_check_at,created_at) VALUES(?,?,?,?,?,0,?)').bind(`monitor-${plan}`,plan,plan,`https://${plan}.example.com`,'example.com',now).run();
   }
+  // Seed history before any dashboard read: closed-hour summaries are cached.
+    for(const [plan,ages] of [['free',[2,6,8]],['starter',[8,29,31]],['pro',[31,89,91]]] as const)for(const age of ages){
+      const time=now-age*86400,id=`${plan}-${age}`;
+      await db.prepare('INSERT INTO checks(id,monitor_id,checked_at,ok,response_ms) VALUES(?,?,?,1,10)').bind(id,`monitor-${plan}`,time).run();
+      await db.prepare('INSERT INTO hourly_stats(monitor_id,hour,total,successful,total_ms) VALUES(?,?,1,1,10)').bind(`monitor-${plan}`,Math.floor(time/3600)*3600).run();
+      await db.prepare('INSERT INTO notifications(id,user_id,monitor_id,kind,message,created_at) VALUES(?,?,?,?,?,?)').bind(id,plan,`monitor-${plan}`,'up','Fixture',time).run();
+      await db.prepare('INSERT INTO incidents(id,monitor_id,opened_at,resolved_at,reason) VALUES(?,?,?,?,?)').bind(id,`monitor-${plan}`,time-300,time,'Fixture').run();
+    }
+    await db.prepare("INSERT INTO incidents(id,monitor_id,opened_at,reason) VALUES('open-old','monitor-free',?,'Still open')").bind(now-120*86400).run();
 });
 afterAll(async()=>{await mf?.dispose();});
 
@@ -88,14 +97,6 @@ describe.sequential('Four plans with billing disabled',()=>{
     expect((await get('business','/dashboard?days=61')).status).toBe(403);
   });
   it('filters expired records immediately and cleans up by the account retention',async()=>{
-    for(const [plan,ages] of [['free',[2,6,8]],['starter',[8,29,31]],['pro',[31,89,91]]] as const)for(const age of ages){
-      const time=now-age*86400,id=`${plan}-${age}`;
-      await db.prepare('INSERT INTO checks(id,monitor_id,checked_at,ok,response_ms) VALUES(?,?,?,1,10)').bind(id,`monitor-${plan}`,time).run();
-      await db.prepare('INSERT INTO hourly_stats(monitor_id,hour,total,successful,total_ms) VALUES(?,?,1,1,10)').bind(`monitor-${plan}`,Math.floor(time/3600)*3600).run();
-      await db.prepare('INSERT INTO notifications(id,user_id,monitor_id,kind,message,created_at) VALUES(?,?,?,?,?,?)').bind(id,plan,`monitor-${plan}`,'up','Fixture',time).run();
-      await db.prepare('INSERT INTO incidents(id,monitor_id,opened_at,resolved_at,reason) VALUES(?,?,?,?,?)').bind(id,`monitor-${plan}`,time-300,time,'Fixture').run();
-    }
-    await db.prepare("INSERT INTO incidents(id,monitor_id,opened_at,reason) VALUES('open-old','monitor-free',?,'Still open')").bind(now-120*86400).run();
     for(const [plan,days] of [['free',7],['starter',30],['pro',90]] as const){
       const history=await(await get(plan,`/monitors/monitor-${plan}/history`)).json() as {checkedAt:number}[];expect(history).toHaveLength(2);
       const paged=await(await get(plan,`/monitors/monitor-${plan}/history?before=${history[0].checkedAt}`)).json() as {checkedAt:number}[];expect(paged).toHaveLength(1);

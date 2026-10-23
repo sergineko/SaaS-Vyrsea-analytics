@@ -1,6 +1,6 @@
 # D1, consumo por comprobación y opciones de crecimiento
 
-Evaluación del 23 de octubre de 2026. Recomendación: conservar D1 para la beta controlada, aplicar la compactación y revisar Workers Paid antes de ampliar capacidad. No se ha contratado ningún plan ni migrado a otro proveedor.
+Evaluación del 23 de octubre de 2026. Presupuesto confirmado: **0 € durante la beta**, ampliable cuando haya aceptación y suscripciones. Recomendación: conservar D1 para la beta controlada, optimizar consultas y revisar Workers Paid antes de ampliar capacidad. No se ha contratado ningún plan ni migrado a otro proveedor. La comparación con PostgreSQL y Supabase autohospedado está en [database-growth.md](database-growth.md).
 
 ## Medición reproducible
 
