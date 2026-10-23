@@ -33,7 +33,7 @@ export const team=new Hono<AppEnv>();
 team.get('/workspaces',async c=>{
   const actor=c.get('actor')??c.get('user');
   const rows=await c.env.DB.prepare(`SELECT u.id,u.username,t.role FROM team_members t JOIN users u ON u.id=t.workspace_id
-    WHERE t.user_id=? AND u.account_status='active' AND (u.plan_id='business' OR u.is_owner=1) ORDER BY u.username LIMIT 50`).bind(actor.id).all();
+    WHERE t.user_id=? AND u.account_status='active' AND (u.plan_id='business' OR u.is_owner=1) ORDER BY u.username LIMIT 100`).bind(actor.id).all();
   return c.json({own:{id:actor.id,username:actor.username,role:'owner'},shared:rows.results,current:c.get('user').id,role:c.get('workspaceRole')});
 });
 team.post('/team/accept',async c=>{
@@ -46,8 +46,8 @@ team.post('/team/accept',async c=>{
     c.env.DB.prepare(`INSERT INTO team_members(workspace_id,user_id,role,created_at) SELECT workspace_id,user_id,role,? FROM team_invitations
       WHERE id=? AND claimed_at IS NULL AND expires_at>? ON CONFLICT(workspace_id,user_id) DO UPDATE SET role=excluded.role`).bind(now,row.id,now),
     c.env.DB.prepare('UPDATE team_invitations SET claimed_at=? WHERE id=? AND claimed_at IS NULL').bind(now,row.id),
-    c.env.DB.prepare('INSERT INTO audit_events(id,workspace_id,actor_id,actor_name,action,resource,created_at) SELECT ?,?,?,?,\'team.accept\',?,? WHERE EXISTS(SELECT 1 FROM team_invitations WHERE id=? AND claimed_at=?)')
-      .bind(crypto.randomUUID(),row.workspace_id,actor.id,actor.username,actor.id,now,row.id,now),
+    c.env.DB.prepare('INSERT OR IGNORE INTO audit_events(id,workspace_id,actor_id,actor_name,action,resource,created_at) SELECT ?,?,?,?,\'team.accept\',?,? WHERE EXISTS(SELECT 1 FROM team_invitations WHERE id=? AND claimed_at=?)')
+      .bind('team-accept:'+row.id,row.workspace_id,actor.id,actor.username,actor.id,now,row.id,now),
   ]);
   if(!results[0].meta.changes)throw new HTTPException(409,{message:'La invitación ya se utilizó.'});
   return c.json({ok:true,workspaceId:row.workspace_id});
@@ -60,8 +60,8 @@ team.use('/team/*',async(c,next)=>{
 team.get('/team/members',async c=>{
   const id=c.get('user').id;
   const [members,invitations,audit]=await c.env.DB.batch([
-    c.env.DB.prepare('SELECT t.user_id AS id,u.username,t.role,t.created_at AS createdAt FROM team_members t JOIN users u ON u.id=t.user_id WHERE t.workspace_id=? ORDER BY u.username LIMIT 50').bind(id),
-    c.env.DB.prepare('SELECT i.id,u.username,i.role,i.expires_at AS expiresAt FROM team_invitations i JOIN users u ON u.id=i.user_id WHERE i.workspace_id=? AND i.claimed_at IS NULL AND i.expires_at>? LIMIT 50').bind(id,nowSeconds()),
+    c.env.DB.prepare('SELECT t.user_id AS id,u.username,t.role,t.created_at AS createdAt FROM team_members t JOIN users u ON u.id=t.user_id WHERE t.workspace_id=? ORDER BY u.username LIMIT 100').bind(id),
+    c.env.DB.prepare('SELECT i.id,u.username,i.role,i.expires_at AS expiresAt FROM team_invitations i JOIN users u ON u.id=i.user_id WHERE i.workspace_id=? AND i.claimed_at IS NULL AND i.expires_at>? LIMIT 100').bind(id,nowSeconds()),
     c.env.DB.prepare('SELECT actor_name AS actor,action,resource,created_at AS createdAt FROM audit_events WHERE workspace_id=? ORDER BY created_at DESC LIMIT 100').bind(id),
   ]);
   return c.json({members:members.results,invitations:invitations.results,audit:audit.results,role:c.get('workspaceRole')});
@@ -70,8 +70,7 @@ team.post('/team/invitations',async c=>{
   const value=z.object({username:z.string().trim().min(3).max(60),role:roleSchema}).strict().parse(await c.req.json());
   const id=c.get('user').id,target=await c.env.DB.prepare("SELECT id FROM users WHERE username=? AND account_status='active'").bind(value.username.toLowerCase()).first<{id:string}>();
   if(!target||target.id===id)throw new HTTPException(400,{message:'Elige otra cuenta activa registrada en Vyrsea.'});
-  const count=await c.env.DB.prepare('SELECT COUNT(*) AS n FROM team_members WHERE workspace_id=?').bind(id).first<{n:number}>();
-  if(count!.n>=50)throw new HTTPException(409,{message:'La beta admite 50 miembros por espacio.'});
+  if(await c.env.DB.prepare('SELECT user_id FROM team_members WHERE workspace_id=? AND user_id=?').bind(id,target.id).first())throw new HTTPException(409,{message:'Este usuario ya es miembro. Cambia su rol desde el directorio del equipo.'});
   const token=randomToken(),expiresAt=nowSeconds()+7*86400;
   await c.env.DB.batch([c.env.DB.prepare(`INSERT INTO team_invitations(id,workspace_id,user_id,role,token_hash,expires_at) VALUES(?,?,?,?,?,?)
     ON CONFLICT(workspace_id,user_id) DO UPDATE SET token_hash=excluded.token_hash,role=excluded.role,expires_at=excluded.expires_at,claimed_at=NULL`)
@@ -80,7 +79,8 @@ team.post('/team/invitations',async c=>{
 });
 team.patch('/team/members/:id',async c=>{
   const {role}=z.object({role:roleSchema}).strict().parse(await c.req.json());
-  const result=await c.env.DB.batch([c.env.DB.prepare('UPDATE team_members SET role=? WHERE workspace_id=? AND user_id=?').bind(role,c.get('user').id,c.req.param('id')),auditStatement(c,'team.role.'+role,c.req.param('id'))]);
+  const result=await c.env.DB.batch([c.env.DB.prepare('UPDATE team_members SET role=? WHERE workspace_id=? AND user_id=?').bind(role,c.get('user').id,c.req.param('id')),
+    c.env.DB.prepare('DELETE FROM team_invitations WHERE workspace_id=? AND user_id=? AND claimed_at IS NULL').bind(c.get('user').id,c.req.param('id')),auditStatement(c,'team.role.'+role,c.req.param('id'))]);
   if(!result[0].meta.changes)throw new HTTPException(404,{message:'Miembro no encontrado.'});return c.json({ok:true});
 });
 team.delete('/team/members/:id',async c=>{

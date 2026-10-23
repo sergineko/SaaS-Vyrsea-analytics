@@ -50,6 +50,8 @@ describe.sequential('Commercial preparation without paid activation',()=>{
    expect((await api('/dashboard','GET',undefined,'member','owner')).status).toBe(403);
    expect((await api('/team/accept','POST',{token},'other')).status).toBe(409);
    const accepted=await Promise.all([api('/team/accept','POST',{token},'member'),api('/team/accept','POST',{token},'member')]);expect(accepted.map(r=>r.status).sort()).toEqual([200,409]);
+   expect((await api('/team/invitations','POST',{username:'member',role:'admin'})).status).toBe(409);
+   expect((await db.prepare("SELECT COUNT(*) AS n FROM audit_events WHERE action='team.accept'").first())!.n).toBe(1);
    const shared=await api('/dashboard','GET',undefined,'member','owner');expect(shared.status).toBe(200);const data=await shared.json() as {user:{id:string;isOwner:boolean};workspace:{role:string};monitors:{id:string}[]};expect(data.user.id).toBe('member');expect(data.user.isOwner).toBe(false);expect(data.workspace.role).toBe('reader');expect(data.monitors[0].id).toBe(monitor);
    expect((await api('/monitors/'+monitor,'PATCH',{paused:true},'member','owner')).status).toBe(403);expect((await api('/owner/accounts','GET',undefined,'member','owner')).status).toBe(403);expect((await api('/alerts','GET',undefined,'member','owner')).status).toBe(403);
    expect((await api('/team/members/member','PATCH',{role:'operator'})).status).toBe(200);expect((await api('/monitors/'+monitor,'PATCH',{name:'Operator changed'},'member','owner')).status).toBe(200);expect((await api('/monitors/'+monitor,'DELETE',{},'member','owner')).status).toBe(403);expect((await api('/team/invitations','POST',{username:'other',role:'admin'},'member','owner')).status).toBe(403);
@@ -63,6 +65,7 @@ describe.sequential('Commercial preparation without paid activation',()=>{
    expect((await api('/alerts/'+value.id+'/verify','POST')).status).toBe(200);await notification();await dispatch();await dispatch();expect(webhookCalls).toHaveLength(2);
    const last=webhookCalls.at(-1)!,time=last.headers.get('X-Vyrsea-Timestamp'),id=last.headers.get('X-Vyrsea-Event-Id');expect(last.headers.get('X-Vyrsea-Signature')).toBe('v1,'+createHmac('sha256',value.secret).update(`${time}.${id}.${last.body}`).digest('base64'));
    expect((await db.prepare('SELECT state,attempts FROM alert_deliveries').first())).toMatchObject({state:'delivered',attempts:1});
+   expect((await api('/alerts/'+value.id+'/test','POST')).status).toBe(200);await dispatch();expect(JSON.parse(webhookCalls.at(-1)!.body).type).toBe('monitor.test');
  });
  it('retries temporary webhook failures with a stable event ID and rejects internal or redirected destinations',async()=>{
    expect((await api('/alerts','POST',{kind:'webhook',target:'http://hooks.example.org/alerts'})).status).toBe(400);expect((await api('/alerts','POST',{kind:'webhook',target:'https://127.0.0.1/'})).status).toBe(400);
@@ -87,6 +90,12 @@ describe.sequential('Commercial preparation without paid activation',()=>{
    const data=await(await api('/status-pages/'+id+'/domain')).json() as {ready:boolean;domain:{verificationValue:string}};expect(data.ready).toBe(false);txt=data.domain.verificationValue;
    expect((await api('/status-pages/'+id+'/domain/verify','POST')).status).toBe(200);expect((await api('/status-pages/'+id+'/domain/provision','POST')).status).toBe(503);
    expect((await api('/status-pages/'+id+'/domain','GET',undefined,'member')).status).toBe(403);expect((await api('/status-pages/'+id+'/announcements','GET',undefined,'member')).status).toBe(403);
+   await db.prepare("UPDATE users SET plan_id='business' WHERE id='other'").run();
+   expect((await api('/status-pages/'+id+'/domain','GET',undefined,'other')).status).toBe(404);
+   expect((await api('/status-pages/'+id+'/domain','POST',{hostname:'another.example.org'},'other')).status).toBe(404);
+   expect((await api('/status-pages/'+id+'/announcements','GET',undefined,'other')).status).toBe(404);
+   await db.prepare("UPDATE users SET plan_id='pro' WHERE id='other'").run();
+   expect((await api('/status-pages/'+id+'/domain','GET',undefined,'other')).status).toBe(403);
    expect((await mf.dispatchFetch('https://estado.customer.example.org/')).status).toBe(404);
  });
 });

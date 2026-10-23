@@ -42,7 +42,7 @@ Cada persona utiliza su cuenta y passkeys existentes. Un administrador invita a 
 - Operador: consultas, pausa/comprobación de monitores, mantenimientos y comunicados de incidencias. No borra monitores ni administra equipo o canales.
 - Lector: solo consulta. No escribe ni publica.
 
-El selector lateral elige entre el espacio personal y los compartidos. `X-Vyrsea-Workspace` es una preferencia: el servidor vuelve a verificar membresía, estado Business y rol en cada solicitud. Las rutas de autenticación, seguridad personal y propietario siguen usando la identidad de la sesión. Revocar acceso bloquea las nuevas solicitudes. El límite de beta es cincuenta miembros por espacio.
+El selector lateral elige entre el espacio personal y los compartidos. `X-Vyrsea-Workspace` es una preferencia: el servidor vuelve a verificar membresía, estado Business y rol en cada solicitud. Las rutas de autenticación, seguridad personal y propietario siguen usando la identidad de la sesión. Revocar acceso bloquea las nuevas solicitudes. El equipo reutiliza cuentas registradas; no crea otras ni amplía el máximo global de cien cuentas de la beta. Los cambios de rol invalidan invitaciones pendientes del mismo miembro.
 
 Los cambios en monitores, mantenimientos, páginas, comunicados, dominios y destinos guardan autor y recurso en la misma transacción que la modificación. No se genera auditoría por sonda o lectura. La administración de miembros tiene sus propios eventos. La limpieza aplica el histórico contratado a auditoría, entregas y comunicados resueltos; conserva comunicados abiertos y elimina invitaciones vencidas y recibos de correo de más de siete días en lotes acotados.
 

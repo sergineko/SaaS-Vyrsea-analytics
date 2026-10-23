@@ -3,7 +3,7 @@ import {HTTPException} from 'hono/http-exception';
 import {z} from 'zod';
 import type {AppEnv,Env} from './env';
 import {nowSeconds} from './env';
-import {digest,randomToken} from './security';
+import {digest,randomToken,rateLimit} from './security';
 import {accountPlan} from './plans';
 import {normalizeTarget,publicDNS} from './probe';
 import {decryptSecret,encryptSecret,signature} from './alert-crypto';
@@ -14,7 +14,7 @@ const webhookReady=(env:Env)=>enabled(env)&&Boolean(env.ALERTS_ENCRYPTION_KEY);
 const emailAllowed=(plan:string)=>['starter','pro','business'].includes(plan);
 const webhookAllowed=(plan:string)=>['pro','business'].includes(plan);
 const backoff=[60,300,900,3600,10800];
-type Destination={id:string;user_id:string;kind:'email'|'webhook';target:string;secret_cipher:string|null;verified_at:number|null;enabled:number;created_at:number};
+type Destination={id:string;user_id:string;kind:'email'|'webhook';target:string;secret_cipher:string|null;verified_at:number|null;verification_expires:number|null;enabled:number;created_at:number};
 type Delivery={id:string;destination_id:string;event_id:string;payload:string;attempts:number;created_at:number;lease_token:string};
 export const alerts=new Hono<AppEnv>();
 alerts.use('*',async(c,next)=>{if(!['owner','admin'].includes(c.get('workspaceRole')??'owner'))throw new HTTPException(403,{message:'La configuración de alertas requiere un administrador.'});await next();});
@@ -48,6 +48,20 @@ alerts.patch('/:id',async c=>{
   const {enabled}=z.object({enabled:z.boolean()}).strict().parse(await c.req.json());
   await c.env.DB.prepare('UPDATE alert_destinations SET enabled=? WHERE id=? AND user_id=?').bind(Number(enabled),c.req.param('id'),c.get('user').id).run();return c.json({ok:true});
 });
+alerts.post('/:id/test',async c=>{
+  z.object({}).strict().parse(await c.req.json());
+  const row=await c.env.DB.prepare('SELECT * FROM alert_destinations WHERE id=? AND user_id=?').bind(c.req.param('id'),c.get('user').id).first<Destination>();
+  if(!row)throw new HTTPException(404,{message:'Destino no encontrado.'});
+  const plan=await accountPlan(c.env,c.get('user').id);
+  if(!(row.kind==='email'?emailAllowed(plan.id):webhookAllowed(plan.id)))throw new HTTPException(403,{message:'El canal no está incluido en tu plan.'});
+  if(!(row.kind==='email'?emailReady(c.env):webhookReady(c.env)))throw new HTTPException(503,{message:'El canal todavía no está activado.'});
+  if(!row.enabled||!row.verified_at)throw new HTTPException(409,{message:'Confirma y habilita el destino antes de enviar una prueba.'});
+  await rateLimit(c,'alert-test',5,3600);
+  const id='test:'+crypto.randomUUID(),now=nowSeconds();
+  await c.env.DB.prepare('INSERT INTO alert_deliveries(id,destination_id,event_id,payload,next_attempt_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?)')
+    .bind(id,row.id,id,'Prueba de alertas de Vyrsea. No representa una incidencia real.',now,now,now).run();
+  return c.json({ok:true,message:'Prueba en cola. Consulta su resultado en Últimas entregas.'});
+});
 alerts.post('/:id/verify',async c=>{
   const destination=await c.env.DB.prepare('SELECT * FROM alert_destinations WHERE id=? AND user_id=?').bind(c.req.param('id'),c.get('user').id).first<Destination>();
   if(!destination)throw new HTTPException(404,{message:'Destino no encontrado.'});
@@ -55,6 +69,8 @@ alerts.post('/:id/verify',async c=>{
   const now=nowSeconds();
   if(destination.kind==='email'){
     if(!emailReady(c.env))throw new HTTPException(503,{message:'El envío aún no está activado. Falta conectar el proveedor y verificar el remitente.'});
+    if(destination.verification_expires&&destination.verification_expires>now)throw new HTTPException(429,{message:'Ya hay una confirmación vigente. Revisa tu correo o espera a que caduque.'});
+    await rateLimit(c,'email-verification',5,3600);
     const token=randomToken(),event=crypto.randomUUID();
     // Store the verification message encrypted; the public confirmation only sees its hash.
     const payload='enc:'+await encryptSecret(c.env,JSON.stringify({subject:'Confirma tus alertas de Vyrsea',text:`Confirma este destino para recibir alertas: ${c.env.APP_ORIGIN}/#confirm-email=${token}`}));
@@ -63,6 +79,7 @@ alerts.post('/:id/verify',async c=>{
     return c.json({ok:true,message:'Confirmación en cola. El enlace caduca en 30 minutos.'});
   }
   if(!webhookReady(c.env))throw new HTTPException(503,{message:'Las entregas externas están deshabilitadas hasta completar su activación.'});
+  await rateLimit(c,'webhook-verification',5,3600);
   const challenge=randomToken();
   try{
     await publicDNS(new URL(destination.target).hostname,AbortSignal.timeout(5000),fetch);
@@ -126,7 +143,7 @@ export async function dispatchAlerts(env:Env,now=nowSeconds()){
         if(!emailReady(env))throw new Error('Proveedor de correo sin activar.');
         let payload:{subject:string;text:string};
         if(row.payload.startsWith('enc:'))payload=JSON.parse(await decryptSecret(env,row.payload.slice(4)));
-        else {if(!dest.verified_at){state='cancelled';throw new Error('Destino sin confirmar.');}payload={subject:'Vyrsea · cambio de disponibilidad',text:row.payload};}
+        else {if(!dest.verified_at){state='cancelled';throw new Error('Destino sin confirmar.');}payload={subject:row.event_id.startsWith('test:')?'Vyrsea · prueba de alertas':'Vyrsea · cambio de disponibilidad',text:row.payload};}
         try{
           const result=await env.EMAIL!.send({from:env.EMAIL_FROM!,to:dest.target,...payload,headers:{'X-Vyrsea-Event-Id':row.event_id,'Auto-Submitted':'auto-generated'}});
           providerId=result.messageId;state='accepted';
@@ -139,7 +156,7 @@ export async function dispatchAlerts(env:Env,now=nowSeconds()){
       }else{
         if(!webhookReady(env)||!dest.verified_at){state='cancelled';throw new Error('Destino sin verificar.');}
         await publicDNS(new URL(dest.target).hostname,AbortSignal.timeout(5000),fetch);
-        const body=JSON.stringify({id:row.event_id,type:row.event_id.endsWith(':down')?'monitor.down':'monitor.up',createdAt:row.created_at,message:row.payload}),time=String(now);
+        const body=JSON.stringify({id:row.event_id,type:row.event_id.startsWith('test:')?'monitor.test':row.event_id.endsWith(':down')?'monitor.down':'monitor.up',createdAt:row.created_at,message:row.payload}),time=String(now);
         const response=await fetch(dest.target,{method:'POST',redirect:'manual',signal:AbortSignal.timeout(8000),headers:{'Content-Type':'application/json','X-Vyrsea-Event-Id':row.event_id,'X-Vyrsea-Timestamp':time,'X-Vyrsea-Signature':`v1,${await signature(await decryptSecret(env,dest.secret_cipher!),`${time}.${row.event_id}.${body}`)}`},body});
         status=response.status;await response.body?.cancel();if(!response.ok)throw new Error(`Destino HTTP ${status}`);state='delivered';
       }
