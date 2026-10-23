@@ -120,6 +120,20 @@ describe.skipIf(!connection).sequential('PostgreSQL 17: real Worker, transaction
     expect((await db.prepare('SELECT next_check_at AS n FROM monitors WHERE id=?').bind(id).first<{n:number}>())!.n).toBeGreaterThan(tick);
     expect((await db.prepare('SELECT count(*) AS n FROM check_jobs WHERE monitor_id=?').bind(id).first<{n:number}>())!.n).toBe(0);
   });
+  it('handles parallel unrelated monitors, duplicate deliveries and out-of-order results without corrupting aggregates',async()=>{
+    const ids=Array.from({length:4},()=>randomUUID()),slot=now()+900;
+    for(const id of ids)await db.prepare('INSERT INTO monitors(id,user_id,name,url,root_domain,next_check_at,created_at) VALUES(?,?,?,?,?,0,?)').bind(id,other,'Parallel',`https://${id}.example.net/`,'example.net',now()).run();
+    const work=ids.flatMap(id=>[{id,slot:slot+180,ok:true},{id,slot:slot+60,ok:false},{id,slot:slot+120,ok:false},{id,slot:slot+180,ok:true}]);
+    async function lane(){for(;;){const next=work.shift();if(!next)return;expect((await result(next.slot,next.ok,next.id)).status).toBe(200);}}
+    await Promise.all(Array.from({length:6},lane));
+    for(const id of ids){
+      expect(await db.prepare('SELECT last_slot,status,failures FROM monitors WHERE id=?').bind(id).first()).toMatchObject({last_slot:slot+180,status:'up',failures:0});
+      const checks=(await db.prepare('SELECT count(*) AS n FROM checks WHERE monitor_id=?').bind(id).first<{n:number}>())!.n;
+      expect(checks).toBeGreaterThanOrEqual(1);expect(checks).toBeLessThanOrEqual(3);
+      expect((await db.prepare('SELECT sum(total) AS n FROM hourly_stats WHERE monitor_id=?').bind(id).first<{n:number}>())!.n).toBe(checks);
+      expect((await db.prepare('SELECT count(*) AS n FROM incidents WHERE monitor_id=? AND resolved_at IS NULL').bind(id).first<{n:number}>())!.n).toBe(0);
+    }
+  },60000);
 });
 
 describe('SQL parameter safety across the PostgreSQL adapter',()=>{

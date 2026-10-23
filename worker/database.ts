@@ -15,6 +15,10 @@ export interface DatabaseStatement {
 export interface Database {
   prepare(query: string): DatabaseStatement;
   batch<T = Record<string, unknown>>(statements: DatabaseStatement[]): Promise<DatabaseResult<T>[]>;
+  monitorBatch?<T = Record<string, unknown>>(statements:DatabaseStatement[],monitorIds:string[]):Promise<DatabaseResult<T>[]>;
+}
+export function monitorBatch<T = Record<string,unknown>>(database:Database,statements:DatabaseStatement[],monitorIds:string[]){
+  return database.monitorBatch?database.monitorBatch<T>(statements,monitorIds):database.batch<T>(statements);
 }
 export type DatabaseBindings = Omit<Env, 'DB'> & { DB?: Database };
 
@@ -102,7 +106,9 @@ class Statement implements DatabaseStatement {
 export class PostgresDatabase implements Database {
   constructor(readonly client: Client, readonly schema = 'vyrsea') {}
   prepare(query: string) { return new Statement(this, query); }
-  async batch<T = Record<string, unknown>>(statements: DatabaseStatement[]): Promise<DatabaseResult<T>[]> {
+  async batch<T = Record<string, unknown>>(statements: DatabaseStatement[]): Promise<DatabaseResult<T>[]> {return this.executeBatch<T>(statements);}
+  async monitorBatch<T = Record<string,unknown>>(statements:DatabaseStatement[],monitorIds:string[]){return this.executeBatch<T>(statements,[...new Set(monitorIds)].sort());}
+  private async executeBatch<T = Record<string,unknown>>(statements:DatabaseStatement[],monitorIds?:string[]):Promise<DatabaseResult<T>[]> {
     if (!statements.length) return [];
     const prepared = statements.map(statement => {
       if (!(statement instanceof Statement) || statement.database !== this) throw new Error('Statements belong to another database');
@@ -121,10 +127,23 @@ export class PostgresDatabase implements Database {
       return results;
     };
     if (prepared.every(statement => /^\s*SELECT\b/i.test(statement.sql))) return run(this.client);
-    // D1 serialized all writes. PostgreSQL must retry the ENTIRE transaction,
-    // including eligibility reads, to retain quotas and delivery idempotency.
+    // One SQL write is already atomic. Security/quota batches retain SERIALIZABLE.
+    // The hot monitoring path uses explicit account/monitor row locks instead of
+    // SSI predicate locks, avoiding false conflicts between unrelated monitors.
+    const quotaInsert=prepared.some(statement=>/^\s*INSERT\s+INTO\s+"[^"]+"\.(users|monitors|credentials|maintenance_windows|status_pages)\b/i.test(statement.sql));
+    const isolation=monitorIds||prepared.length===1&&!quotaInsert?'read committed':'serializable';
     for (let attempt = 0; ; attempt++) {
-      try { return await this.client.begin('isolation level serializable', transaction => run(transaction)) as DatabaseResult<T>[]; }
+      try { return await this.client.begin('isolation level '+isolation, async transaction => {
+        if(monitorIds?.length){
+          const ids=JSON.stringify(monitorIds);
+          // Consistent parent -> child order also coordinates with suspension
+          // and plan changes, while different monitors can finish in parallel.
+          await transaction.unsafe(postgresQuery(`SELECT u.id FROM users u WHERE u.id IN
+            (SELECT m.user_id FROM monitors m WHERE m.id IN (SELECT value FROM json_each(?))) ORDER BY u.id FOR SHARE`,this.schema),[ids],{prepare:true});
+          await transaction.unsafe(postgresQuery(`SELECT id FROM monitors WHERE id IN (SELECT value FROM json_each(?)) ORDER BY id FOR UPDATE`,this.schema),[ids],{prepare:true});
+        }
+        return run(transaction);
+      }) as DatabaseResult<T>[]; }
       catch (error) {
         const code = (error as {code?: string}).code;
         if (attempt >= 4 || !['40001', '40P01'].includes(code ?? '')) throw error;

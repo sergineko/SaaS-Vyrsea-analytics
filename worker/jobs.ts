@@ -4,6 +4,7 @@ import { probe, type ProbeResult } from './probe';
 import { accountEligible, expireInactiveAccounts, slotEligible } from './account-policy';
 import { JOBS_PER_MESSAGE, SCHEDULER_BATCH_SIZE } from '../shared/capacity';
 import { retentionCandidatesSQL } from './retention';
+import {monitorBatch} from './database';
 
 export { JOBS_PER_MESSAGE };
 
@@ -16,7 +17,7 @@ async function reserveChecks(env: Env, monitorIds: string[], timestamp: number, 
   const ids = JSON.stringify(monitorIds);
   // Three set-based statements, regardless of the number of due monitors.
   // Keep the reservation, maintenance guard and cadence update in one transaction.
-  const result = await env.DB.batch<{monitorId:string}>([
+  const result = await monitorBatch<{monitorId:string}>(env.DB,[
     env.DB.prepare(`UPDATE monitors SET next_check_at=MAX(next_check_at,(SELECT MAX(w.ends_at) FROM maintenance_windows w
       WHERE w.monitor_id=monitors.id AND w.cancelled_at IS NULL AND w.starts_at<=? AND w.ends_at>?)),
       failures=CASE WHEN status='down' THEN failures ELSE 0 END,status=CASE WHEN status='degraded' THEN 'pending' ELSE status END
@@ -29,7 +30,7 @@ async function reserveChecks(env: Env, monitorIds: string[], timestamp: number, 
     env.DB.prepare(`UPDATE monitors SET next_check_at=?+(SELECT p.interval_seconds FROM plan_limits p JOIN users u ON u.plan_id=p.id WHERE u.id=monitors.user_id) WHERE id IN (SELECT value FROM json_each(?)) AND paused=0 AND next_check_at<=?
       AND EXISTS(SELECT 1 FROM check_jobs WHERE id=monitors.id || ':' || CAST(? AS INTEGER))`)
       .bind(cadenceBase, ids, timestamp, slot),
-  ]);
+  ],monitorIds);
   const reserved = new Set(result[1].results.map(row => row.monitorId));
   return monitorIds.map(id => reserved.has(id));
 }
@@ -70,8 +71,8 @@ export async function recordResult(env: Env, job: CheckJob, result: ProbeResult,
     OR (w.starts_at<=? AND MIN(w.ends_at,COALESCE(w.cancelled_at,w.ends_at))>?)))`;
   const maintenanceTimes = [job.slot,job.slot,timestamp,timestamp] as const;
   // A single atomic transaction: the monitor's last_slot changes LAST, guarding
-  // every statement. PostgreSQL serialization retries preserve delivery idempotency.
-  await env.DB.batch([
+  // every statement. PostgreSQL locks the account/monitor before this batch.
+  await monitorBatch(env.DB,[
     // A planned gap breaks consecutive failures. A success resets them in the
     // final monitor update already; an open incident still recovers below.
     ...(!result.ok ? [env.DB.prepare(`UPDATE monitors SET failures=CASE WHEN status='down' THEN failures ELSE 0 END,
@@ -108,7 +109,7 @@ export async function recordResult(env: Env, job: CheckJob, result: ProbeResult,
       WHERE id=? AND last_slot<? AND paused=0 ${outsideMaintenance}`)
       .bind(result.ok ? 1 : 0, result.ok ? 1 : 0, timestamp, result.statusCode, result.responseMs, result.error, job.slot, job.monitorId, job.slot,...maintenanceTimes),
     env.DB.prepare('DELETE FROM check_jobs WHERE id=?').bind(id),
-  ]);
+  ],[job.monitorId]);
 }
 
 export async function consume(payload: QueuePayload, env: Env) {
