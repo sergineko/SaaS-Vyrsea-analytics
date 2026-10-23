@@ -9,6 +9,9 @@ export interface InfrastructureData {
   worker: { errors: number | null; cpuP50Ms: number | null };
   databaseBytes: number | null; errors: string[];
   database?: {provider:'d1'|'supabase'; applicationBytes:number|null; storageLimitBytes:number|null};
+  supabase?:import('./supabase-usage').SupabaseUsage|null;
+  hyperdrive?:{usage:UsageMetric;resultBytesToday:number|null;resultBytesMonth:number|null;projectedMonthBytes:number|null;monthStart:number};
+  activation?:{emailReady:boolean;webhooksReady:boolean;customDomainsReady:boolean;encryptedDestinations:boolean};
   retention?: {runDay:string;startedAt:number;updatedAt:number;completedAt:number|null;pending:number;deleted:Record<string,number>} | null;
 }
 export function projectDailyUsage(used: number | null, recent: number | null, reportedThrough: number, dayStart: number) {

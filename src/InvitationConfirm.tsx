@@ -1,0 +1,7 @@
+import {useState} from 'react';
+import {Modal} from './ui';
+import {request} from './api';
+export function InvitationConfirm({value,user,onLogin,onClose}:{value:{kind:'team'|'confirm-email';token:string};user:boolean;onLogin:()=>void;onClose:()=>void}){
+ const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[done,setDone]=useState(false);
+ return <Modal title={value.kind==='team'?'Aceptar invitación al equipo':'Confirmar correo de alertas'} onClose={onClose}><p>{value.kind==='team'?'Se añadirá a tu cuenta el acceso al espacio Business con el rol indicado por quien te ha invitado. Inicia sesión con el usuario destinatario.':'Confirma que deseas recibir avisos de disponibilidad de Vyrsea en esta dirección. Puedes desactivar el destino desde la configuración de alertas.'}</p>{message&&<p role="status">{message}</p>}{done?<button className="button primary" onClick={()=>{onClose();location.reload();}}>Continuar</button>:value.kind==='team'&&!user?<button className="button primary" onClick={onLogin}>Iniciar sesión para aceptar</button>:<button className="button primary" disabled={busy} onClick={async()=>{setBusy(true);try{await request(value.kind==='team'?'/team/accept':'/public/alerts/confirm','POST',{token:value.token});setDone(true);setMessage(value.kind==='team'?'Invitación aceptada. Ya puedes elegir el espacio en el menú lateral.':'Dirección confirmada.');}catch(e){setMessage((e as Error).message);}finally{setBusy(false);}}}>{busy?'Confirmando…':'Confirmar'}</button>}</Modal>;
+}

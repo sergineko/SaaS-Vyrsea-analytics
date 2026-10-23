@@ -4,8 +4,10 @@ import {BILLING,intervalLabel,monthlyPrice,PLAN_CATALOG,quotaLabel} from '../sha
 import {PlanComparison} from './PlanComparison';
 import type {DashboardData} from './types';
 import './account-settings.css';
+import './launch-features.css';
 const AccountSecurity=lazy(()=>import('./AccountSecurity'));
-type Section='plan'|'subscription'|'security';
+const AlertSettings=lazy(()=>import('./AlertSettings').then(m=>({default:m.AlertSettings})));
+type Section='plan'|'subscription'|'security'|'alerts';
 
 function Quota({label,used,maximum,icon:Icon}:{label:string;used:number;maximum:number|null;icon:typeof Globe2}){
   const remaining=maximum===null?null:Math.max(0,maximum-used),percent=maximum===null?0:Math.min(100,used/maximum*100);
@@ -17,7 +19,7 @@ export function AccountSettings({data}:{data:DashboardData}){
   const {limits,user}=data,domains=new Set(data.monitors.map(m=>m.rootDomain)).size,owner=user.isOwner;
   const catalogue=PLAN_CATALOG.find(p=>p.id===limits.id)!;
   const overQuota=(limits.domains!==null&&domains>limits.domains)||(limits.monitors!==null&&data.monitors.length>limits.monitors);
-  const tabs=[{id:'plan',name:'Plan y uso',icon:Layers3},{id:'subscription',name:'Suscripción',icon:CreditCard},{id:'security',name:'Seguridad',icon:ShieldCheck}] as const;
+  const tabs=[{id:'plan',name:'Plan y uso',icon:Layers3},{id:'subscription',name:'Suscripción',icon:CreditCard},{id:'alerts',name:'Alertas',icon:Signal},{id:'security',name:'Seguridad',icon:ShieldCheck}] as const;
   return <div className="account-settings">
     <nav className="account-settings-tabs" aria-label="Configuración de cuenta">{tabs.map(({id,name,icon:Icon})=><button key={id} aria-current={section===id?'page':undefined} onClick={()=>setSection(id)}><Icon size={16}/>{name}</button>)}</nav>
     {data.demoContext&&<p className="account-demo-note">Datos de ejemplo. Las acciones de esta vista no cambian tu cuenta ni crean suscripciones.</p>}
@@ -31,5 +33,6 @@ export function AccountSettings({data}:{data:DashboardData}){
     </>}
     {section==='subscription'&&<div className="account-subscription-layout"><section className="panel account-subscription"><div className="panel-heading"><div><span className="small-label">SUSCRIPCIÓN A VYRSEA</span><h2>{owner?'Tu acceso como propietario':limits.id==='free'?'Estás en el plan gratuito':'Acceso de beta, sin suscripción activa'}</h2></div><CreditCard size={25}/></div><div className="account-billing-overview"><div><span>{owner?'Importe de tu acceso':limits.id==='business'?'Condiciones':limits.id==='free'?'Precio del plan':'Tarifa de referencia'}</span><strong>{owner?'0 €':limits.id==='business'?'Personalizadas':monthlyPrice(catalogue.priceMonthly)}</strong><p>{owner?'Todas las funciones de tu espacio están disponibles sin realizar pagos.':limits.id==='free'?'Free no requiere tarjeta ni una suscripción de pago.':limits.id==='business'?'El propietario acordará contigo las características, el precio y la periodicidad.':'La contratación está deshabilitada. Esta tarifa no representa un cargo ni una renovación.'}</p></div><span className="billing-status">{owner?'Sin cobros':limits.id==='free'?'Sin tarjeta':'Pagos deshabilitados'}</span></div><dl className="account-billing-details"><div><dt>Plan asignado</dt><dd>{limits.name}</dd></div><div><dt>Renovación</dt><dd>No hay una renovación programada</dd></div><div><dt>Facturas</dt><dd>No se han generado facturas en Vyrsea</dd></div></dl></section><aside className="panel account-billing-provider"><CreditCard size={23}/><span className="small-label">GESTIÓN DE LA SUSCRIPCIÓN</span><h2>Dodo Payments</h2><p>Cuando se habiliten los pagos, desde aquí podrás consultar tu suscripción a Vyrsea, gestionar su renovación, actualizar el método de pago y descargar tus facturas.</p><button className="button secondary" disabled={!BILLING.enabled}>Gestionar suscripción <ArrowRight size={15}/></button><small>Disponible cuando activemos la contratación. Ahora no se crean cobros ni enlaces de pago.</small></aside></div>}
     {section==='security'&&(data.demoContext?<section className="panel account-security-demo"><ShieldCheck size={28}/><h2>Seguridad de acceso</h2><p>En tu cuenta podrás añadir passkeys y preparar códigos de recuperación. Por seguridad, estos controles solo están disponibles al iniciar sesión.</p></section>:<Suspense fallback={<p className="muted" role="status">Cargando seguridad de acceso…</p>}><AccountSecurity username={user.username}/></Suspense>)}
+    {section==='alerts'&&(data.demoContext?<p className="panel launch-content">Los destinos y las entregas reales se configuran al iniciar sesión.</p>:<Suspense fallback={<p role="status">Cargando alertas…</p>}><AlertSettings/></Suspense>)}
   </div>;
 }

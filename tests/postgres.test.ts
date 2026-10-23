@@ -67,10 +67,25 @@ describe.skipIf(!connection).sequential('PostgreSQL 17: real Worker, transaction
     expect(data.accounts.find(a=>a.username===owner)).toMatchObject({monitors:1});expect(typeof data.accounts[0].createdAt).toBe('number');expect(data.usage.activeAccounts).toBe(2);
     const infra=await api('/owner/infrastructure');expect(infra.status).toBe(200);const metrics=await infra.json() as {databaseBytes:number;database:{provider:string;applicationBytes:number}};
     expect(metrics.database.provider).toBe('supabase');expect(metrics.databaseBytes).toBeGreaterThan(0);expect(metrics.database.applicationBytes).toBeGreaterThan(0);
+    const detailed=metrics as typeof metrics&{supabase:{databaseConnections:number;maxConnections:number;tables:unknown[];plans:unknown[]}};
+    expect(detailed.supabase.databaseConnections).toBeGreaterThan(0);expect(detailed.supabase.maxConnections).toBeGreaterThan(0);expect(detailed.supabase.tables.length).toBeGreaterThan(19);expect(detailed.supabase.plans).toHaveLength(1);
   });
   it('applies an entire batch atomically on constraint failure',async()=>{
     await expect(db.batch([db.prepare("UPDATE monitors SET name='Should roll back' WHERE id=?").bind(monitor),db.prepare("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES('orphan','missing-user',1)")])).rejects.toThrow();
     expect((await db.prepare('SELECT name FROM monitors WHERE id=?').bind(monitor).first<{name:string}>())!.name).toBe('Servicio PostgreSQL');
+  });
+  it('stores publication groups, editorial updates, team roles and atomic author audit on PostgreSQL',async()=>{
+    const component=randomUUID(),created=await api('/status-pages','POST',{title:'PG launch',description:'Synthetic',accent:'#187356',theme:'light',monitorIds:[monitor],published:true,components:[{id:component,name:'Public component',monitorIds:[monitor]}]});
+    expect(created.status).toBe(201);const {id}=await created.json() as {id:string};
+    const announcement=await api(`/status-pages/${id}/announcements`,'POST',{title:'Editorial update',severity:'minor',state:'identified',componentIds:[component],message:'Synthetic public content',published:true});expect(announcement.status).toBe(201);
+    const publicPage=await api('/public/status/'+id);expect(publicPage.status).toBe(200);const payload=await publicPage.json() as {components:unknown[];announcements:unknown[]};expect(payload.components).toHaveLength(1);expect(payload.announcements).toHaveLength(1);
+    const invited=await api('/team/invitations','POST',{username:other,role:'reader'});expect(invited.status).toBe(201);const link=(await invited.json() as {invitationURL:string}).invitationURL,token=new URLSearchParams(new URL(link).hash.slice(1)).get('team');
+    expect((await api('/team/accept','POST',{token},other)).status).toBe(200);
+    const shared=await mf.dispatchFetch(origin+'/api/dashboard',{headers:{Cookie:cookie(other),'X-Vyrsea-Workspace':owner}});expect(shared.status).toBe(200);
+    const denied=await mf.dispatchFetch(origin+'/api/monitors/'+monitor,{method:'PATCH',headers:{Cookie:cookie(other),'X-Vyrsea-Workspace':owner,Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({paused:true})});expect(denied.status).toBe(403);
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM audit_events WHERE workspace_id=?').bind(owner).first<{n:number}>())!.n).toBeGreaterThan(2);
+    expect((await api(`/status-pages/${id}/domain`,'POST',{hostname:'pg.example.org'})).status).toBe(201);
+    expect((await api('/status-pages/'+id,'DELETE')).status).toBe(200);
   });
   it('does not count duplicate concurrent Queue deliveries more than once',async()=>{
     const slot=now()-60;const responses=await Promise.all(Array.from({length:4},()=>result(slot)));expect(responses.every(r=>r.status===200)).toBe(true);

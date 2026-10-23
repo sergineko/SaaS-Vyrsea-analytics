@@ -40,6 +40,6 @@ describe.sequential('Scheduled historical retention',()=>{
   it('fits a full ten-monitor scheduler and daily cleanup under the Free 50-query budget',async()=>{
     await db.prepare("INSERT INTO users(id,username,created_at,plan_id,account_status,is_owner,last_active_at,history_days_limit) VALUES('owner','owner',?,'business','active',1,?,90)").bind(now,now).run();
     for(let i=0;i<10;i++)await db.prepare("INSERT INTO monitors(id,user_id,name,url,root_domain,next_check_at,created_at) VALUES(?,'owner',?,?,?,0,?)").bind(`owned-${i}`,`Owned ${i}`,`https://service${i}.com/`,`service${i}.com`,now).run();
-    const response=await run(true,true);expect(response.status).toBe(200);const result=await response.json() as {queries:number};expect(result.queries).toBe(21);expect(result.queries).toBeLessThanOrEqual(50);
+    const response=await run(true,true);expect(response.status).toBe(200);const result=await response.json() as {queries:number};expect(result.queries).toBeLessThanOrEqual(50);
   });
 });

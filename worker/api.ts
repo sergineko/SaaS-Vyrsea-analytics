@@ -14,16 +14,25 @@ import { maintenance } from './maintenance';
 import { denyInactive } from './accounts';
 import {statusPages} from './status-pages';
 import {availabilityStatsSQL,dashboardStatistics} from './statistics';
+import {team,workspaceContext,auditStatement} from './team';
+import {auditedDatabase} from './audit';
+import {alerts} from './alerts';
 
 export const api = new Hono<AppEnv>();
 api.use('*', async (c, next) => {
   const user = await sessionUser(c);
   if (!user) throw new HTTPException(401, { message: 'Inicia sesión para continuar.' });
   const denied = denyInactive(c, user); if (denied) return denied;
-  c.set('user', user);
+  await workspaceContext(c,user);
   if (!['GET', 'HEAD'].includes(c.req.method)) await rateLimit(c, 'write', 20, 60);
+  if(!['GET','HEAD'].includes(c.req.method)&&!c.req.path.startsWith('/api/team/')){
+    const base=c.env.DB;
+    c.env={...c.env,DB:auditedDatabase(base,()=>auditStatement(c,c.req.method.toLowerCase(),c.req.path,base))};
+  }
   await next();
 });
+api.route('/',team);
+api.route('/alerts',alerts);
 const monitorInput = z.object({ name: z.string().trim().min(1).max(60), url: z.string().max(2048) }).strict();
 const monitorColumns = `id,user_id AS userId,name,url,root_domain AS rootDomain,paused,status,failures,
   last_checked_at AS lastCheckedAt,last_status_code AS lastStatusCode,last_response_ms AS lastResponseMs,
@@ -59,7 +68,7 @@ api.get('/dashboard', async c => {
       WHERE m.user_id=? AND MIN(w.ends_at,COALESCE(w.cancelled_at,w.ends_at))>=? ORDER BY CASE WHEN w.cancelled_at IS NULL AND w.ends_at>? THEN 0 ELSE 1 END,w.starts_at DESC LIMIT 100`)
       .bind(userId,since,nowSeconds()).all(),
   ]);
-  return c.json({ user: c.get('user'), monitors: items, stats: statistics.stats, incidents: incidents.results, notifications: notifications.results,
+  return c.json({ user: c.get('actor')??c.get('user'),workspace:{id:userId,name:c.get('user').username,role:c.get('workspaceRole')}, monitors: items, stats: statistics.stats, incidents: incidents.results, notifications: notifications.results,
     maintenance: windows.results, limits, windowDays: days, activeProbeProviders: ['cloudflare'], multiProbeActive: false, serverTime: timestamp,
     historyAsOf:statistics.historyAsOf,historyCacheSeconds:300 });
 });

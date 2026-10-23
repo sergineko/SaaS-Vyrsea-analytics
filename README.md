@@ -1,5 +1,7 @@
 # Vyrsea
 
+La preparación comercial incorpora alertas de Cloudflare Email Service y webhooks con seguimiento, comunicados públicos, componentes agrupados, logo/favicon, verificación de dominio, equipo Business con permisos y auditoría y análisis de Supabase en Admin Propietario. Los envíos y el aprovisionamiento de dominios permanecen desactivados; no se ha contratado Workers Paid ni habilitado Dodo. [Estado, pruebas y activación](docs/launch-features.md).
+
 MVP de monitorización HTTP basado en el alcance gratuito de `Idea C.docx`. Frontend React + TypeScript + Vite + Tailwind, API Hono sobre Workers, PostgreSQL en Supabase mediante Hyperdrive, passkeys y Cloudflare Queues. No necesita VPS ni un servicio de correo para el acceso. El documento original y los datos locales no se publican en el repositorio. [Arquitectura, migración y operación de PostgreSQL](docs/postgresql.md).
 
 Repositorio: [sergineko/SaaS-Vyrsea-analytics](https://github.com/sergineko/SaaS-Vyrsea-analytics). La rama `main` ejecuta validación de tipos, pruebas y compilación mediante GitHub Actions. Cloudflare Builds tiene su propia conexión para validar y publicar esa rama; los secretos de despliegue permanecen en Cloudflare, fuera de GitHub y del código.
@@ -20,7 +22,7 @@ Repositorio: [sergineko/SaaS-Vyrsea-analytics](https://github.com/sergineko/SaaS
 - Mantenimiento inmediato o programado por servicio, sin solapamientos y con reanudación automática. Las ventanas suspenden sondas/alertas y no fabrican disponibilidad. Las incidencias previas se conservan.
 - Outbox persistente para entregar trabajos a Queues, reintentos, cola de mensajes fallidos y procesamiento idempotente.
 - Retención por cuenta: Free 7 días, Starter 30 días, Pro / Agencia 90 días y Business según contrato. Se aplica a resultados, agregados, alertas e incidencias resueltas. Las incidencias abiertas se conservan.
-- Plataforma avanzada real con cartera agrupada, selección de sondas, páginas de estado personalizables con publicación y exportación HTML e informe CSV bajo demanda para Business. Las secciones de integraciones y equipo identifican lo que sigue pendiente. La demo de solo lectura continúa separada del backend real: `/?demo`.
+- Plataforma avanzada real con cartera agrupada, selección de sondas, páginas de estado personalizables con publicación y exportación HTML e informe CSV bajo demanda para Business. Integraciones y equipo incorporan destinos, entregas, miembros, roles y auditoría; el envío externo permanece desactivado. La demo de solo lectura continúa separada del backend real: `/?demo`.
 - Portada prerenderizada, diseño adaptable, acceso por teclado, metadatos para `https://vyrsea.com`, sitemap, robots, datos estructurados y página 404 real.
 - Documentación pública en `/llms.txt` y `/openapi.json`; herramientas WebMCP experimentales de solo lectura cuando el navegador las admite.
 

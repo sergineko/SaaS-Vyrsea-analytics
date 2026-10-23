@@ -13,9 +13,11 @@ import { account, owner } from './accounts';
 import { runRetentionJob } from './retention-job';
 import {publicStatus} from './status-pages';
 import {withDatabase, type DatabaseBindings} from './database';
+import {publicAlerts,dispatchAlerts,consumeEmailEvent,type EmailEvent} from './alerts';
+import {customStatusRequest} from './status-domains';
 
 const app = new Hono<AppEnv>();
-app.use('/api/*', bodyLimit({ maxSize: 16384, onError: c => c.json({ error: 'Solicitud demasiado grande.' }, 413) }));
+app.use('/api/*',(c,next)=>bodyLimit({maxSize:c.req.path.startsWith('/api/status-pages')?98304:16384,onError:c=>c.json({error:'Solicitud demasiado grande.'},413)})(c,next));
 app.use('/api/*', async (c, next) => {
   c.header('Cache-Control', 'no-store');
   c.header('X-Content-Type-Options', 'nosniff');
@@ -31,7 +33,7 @@ app.use('/api/*', async (c, next) => {
 app.get('/api/health', async c => {
   const postgres=c.env.DATABASE_PROVIDER==='supabase';
   if(postgres)await c.env.DB.prepare('SELECT 1 AS ready').first();
-  return c.json({ok:true,service:'vyrsea',version:'0.3.0',database:postgres?'supabase':'d1'});
+  return c.json({ok:true,service:'vyrsea',version:'0.4.0',database:postgres?'supabase':'d1'});
 });
 app.get('/api/config', c => c.json({ turnstileSiteKey: c.env.TURNSTILE_SITE_KEY ?? '',
   registrationMode: 'approval', freeInactivityDays: 14,
@@ -43,6 +45,7 @@ app.route('/api/auth', credentialSecurity);
 app.route('/api/account', account);
 app.route('/api/owner', owner);
 app.route('/api/public/status',publicStatus);
+app.route('/api/public/alerts',publicAlerts);
 app.route('/api', api);
 app.notFound(c => c.req.path === '/api' || c.req.path.startsWith('/api/')
   ? c.json({ error: 'Ruta no encontrada.' }, 404)
@@ -71,7 +74,7 @@ app.onError((error, c) => {
 export default {
   async fetch(request: Request, bindings: DatabaseBindings, ctx: ExecutionContext) {
     if (bindings.DATABASE_MIGRATION_LOCK === '1' && new URL(request.url).pathname.startsWith('/api/') && !['/api/health','/api/config','/api/plans'].includes(new URL(request.url).pathname)) return Response.json({error:'Estamos migrando la base de datos. Vuelve a intentarlo en unos minutos.'},{status:503,headers:{'Retry-After':'60','Cache-Control':'no-store'}});
-    return withDatabase(bindings, async env => app.fetch(request, env, ctx), ctx);
+    return withDatabase(bindings, async env => {const custom=await customStatusRequest(request,env);return custom instanceof Response?custom:app.fetch(custom??request,env,ctx);}, ctx);
   },
   async scheduled(controller: ScheduledController, bindings: DatabaseBindings, ctx: ExecutionContext) {
     if (bindings.DATABASE_MIGRATION_LOCK === '1') return;
@@ -81,16 +84,16 @@ export default {
     const daily = time.getUTCHours() === 3 && time.getUTCMinutes() === 17;
     // Reuse the minute trigger; unfinished bounded deletes continue every 15 min.
     const continuation=(time.getUTCMinutes()+13)%15===0;
-    await (controller.cron === '17 3 * * *' ? runRetentionJob(env,true) : Promise.all([schedule(env), ...(daily||continuation ? [runRetentionJob(env,daily)] : [])]));
+    await (controller.cron === '17 3 * * *' ? runRetentionJob(env,true) : Promise.all([schedule(env),dispatchAlerts(env), ...(daily||continuation ? [runRetentionJob(env,daily)] : [])]));
     }, ctx);
   },
-  async queue(batch: MessageBatch<QueuePayload>, bindings: DatabaseBindings, ctx: ExecutionContext) {
+  async queue(batch: MessageBatch<QueuePayload|EmailEvent>, bindings: DatabaseBindings, ctx: ExecutionContext) {
     if (bindings.DATABASE_MIGRATION_LOCK === '1') { batch.retryAll({delaySeconds:60}); return; }
     return withDatabase(bindings, async env => {
     for (const message of batch.messages) {
-      try { await consume(message.body, env); message.ack(); }
+      try { if('type' in message.body)await consumeEmailEvent(env,message.body);else await consume(message.body, env); message.ack(); }
       catch { console.error(JSON.stringify({ event: 'queue_retry', attempts: message.attempts })); message.retry({ delaySeconds: 60 }); }
     }
     }, ctx);
   },
-} satisfies ExportedHandler<DatabaseBindings, QueuePayload>;
+} satisfies ExportedHandler<DatabaseBindings, QueuePayload|EmailEvent>;

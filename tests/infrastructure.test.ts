@@ -38,5 +38,11 @@ describe.sequential('Cloudflare usage telemetry',()=>{
     expect(()=>infrastructureQuery({...env,CLOUDFLARE_SCRIPT_NAME:'other-project'} as never,43200)).toThrow();
     const postgres=infrastructureQuery({...env,DATABASE_PROVIDER:'supabase',CLOUDFLARE_D1_ID:undefined} as never,43200);
     expect(postgres.query).not.toContain('d1Analytics');expect(postgres.query).not.toContain('d1Storage');expect(postgres.query).toContain('workersRecent:');
+    const hyperdrive=infrastructureQuery({...env,DATABASE_PROVIDER:'supabase',CLOUDFLARE_HYPERDRIVE_ID:'d'.repeat(32)} as never,1792785600);
+    expect(hyperdrive.query).toContain('hyperdriveQueriesAdaptiveGroups');expect(hyperdrive.query).toContain('configId:"'+'d'.repeat(32)+'"');expect(hyperdrive.query).toContain('hyperdriveMonth:');
+  });
+  it('uses actual Hyperdrive query counts and result bytes without calling them Supabase billing',()=>{
+    const metrics=parseInfrastructure({hyperdriveProject:[{count:900,sum:{resultBytes:2000}}],hyperdriveAccount:[{count:1100}],hyperdriveRecent:[{count:100}],hyperdriveProjectRecent:[{count:80,sum:{resultBytes:1000}}],hyperdriveMonth:[{sum:{resultBytes:100000}}]},43200,{dayStart:0,reportedThrough:43200});
+    expect(metrics.hyperdrive?.usage).toMatchObject({project:900,account:1100,projected:5900,projectSustained24h:7680});expect(metrics.hyperdrive?.resultBytesMonth).toBe(100000);expect(metrics.hyperdrive?.projectedMonthBytes).toBeGreaterThan(100000);
   });
 });

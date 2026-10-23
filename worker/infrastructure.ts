@@ -1,13 +1,14 @@
 import type { Env } from './env';
 import { nowSeconds } from './env';
 import { projectDailyUsage, type InfrastructureData, type UsageMetric } from '../shared/infrastructure';
+import {supabaseUsage} from './supabase-usage';
 
 const fields = {queues:'billableOperations',d1Reads:'rowsRead',d1Writes:'rowsWritten',workers:'requests'} as const;
-type MetricRow = {sum?:Record<string,number>;avg?:Record<string,number>;max?:Record<string,number>;quantiles?:Record<string,number>};
+type MetricRow = {count?:number;sum?:Record<string,number>;avg?:Record<string,number>;max?:Record<string,number>;quantiles?:Record<string,number>};
 type Dataset = Record<string,MetricRow[] | undefined>;
 let warmCache:{key:string;data:InfrastructureData}|undefined;
 const valid = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
-function value(rows: MetricRow[] | undefined, group: keyof MetricRow, field: string): number | null {
+function value(rows: MetricRow[] | undefined, group: Exclude<keyof MetricRow,'count'>, field: string): number | null {
   if (!Array.isArray(rows)) return null;
   if (!rows.length) return group==='sum'?0:null;
   const numbers=rows.map(row=>row[group]?.[field]);
@@ -32,6 +33,14 @@ export function infrastructureQuery(env: Env, timestamp: number) {
     `${name}ProjectRecent:${node}(limit:1,filter:{${time(recent)},${resource}}){sum{${sum}}}`,
   ]);
   nodes.push(`queueDelay:queueMessageOperationsAdaptiveGroups(limit:1,filter:{${time(recent)},queueId:${JSON.stringify(queue)},actionType:"ReadMessage"}){avg{lagTime retryCount}}`);
+  if(postgres&&env.CLOUDFLARE_HYPERDRIVE_ID){
+    const id=env.CLOUDFLARE_HYPERDRIVE_ID;
+    if(!/^[a-f0-9]{32}$/.test(id))throw new Error('Invalid Hyperdrive configuration');
+    for(const [name,start,resource]of [['hyperdriveProject',day,true],['hyperdriveAccount',day,false],['hyperdriveRecent',recent,false],['hyperdriveProjectRecent',recent,true]] as const)
+      nodes.push(`${name}:hyperdriveQueriesAdaptiveGroups(limit:1,filter:{${time(start)}${resource?`,configId:${JSON.stringify(id)}`:''}}){count sum{resultBytes}}`);
+    const date=new Date(end*1000),month=Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),1)/1000;
+    nodes.push(`hyperdriveMonth:hyperdriveQueriesAdaptiveGroups(limit:1,filter:{${time(month)},configId:${JSON.stringify(id)}}){sum{resultBytes}}`);
+  }
   if(!postgres)nodes.push(`storage:d1StorageAdaptiveGroups(limit:1,filter:{date:${JSON.stringify(new Date(day*1000).toISOString().slice(0,10))},databaseId:${JSON.stringify(db)}}){max{databaseSizeBytes}}`);
   return {query:`{viewer{accounts(filter:{accountTag:${JSON.stringify(account)}}){${nodes.join('\n')}}}}`,dayStart:day,reportedThrough:end};
 }
@@ -42,17 +51,22 @@ export function parseInfrastructure(data: Dataset, timestamp: number, window: {d
     return {project,account,dailyLimit,projectRecent,accountRecent,projected:projectDailyUsage(account,accountRecent,window.reportedThrough,window.dayStart),projectedProject:projectDailyUsage(project,projectRecent,window.reportedThrough,window.dayStart),projectSustained24h:projectRecent===null?null:Math.ceil(projectRecent*96)};
   }
   const cpu=value(data.workersProject,'quantiles','cpuTimeP50');
+  const count=(name:string)=>{const rows=data[name];return rows===undefined?null:rows.every(row=>valid(row.count))?rows.reduce((n,row)=>n+row.count!,0):null;};
+  const hp=count('hyperdriveProject'),ha=count('hyperdriveAccount'),hr=count('hyperdriveRecent'),hpr=count('hyperdriveProjectRecent');
+  const date=new Date(window.reportedThrough*1000),monthStart=Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),1)/1000,monthEnd=Date.UTC(date.getUTCFullYear(),date.getUTCMonth()+1,1)/1000;
+  const monthBytes=value(data.hyperdriveMonth,'sum','resultBytes'),recentBytes=value(data.hyperdriveProjectRecent,'sum','resultBytes');
   return {configured:true,fetchedAt:timestamp,dayStart:window.dayStart,reportedThrough:window.reportedThrough,recentMinutes:15,
     usage:{queues:usage('queues','queues',10000),d1Reads:usage('d1Reads','d1',5000000),d1Writes:usage('d1Writes','d1',100000),workers:usage('workers','workers',100000)},
     queue:{backlog:null,oldestAgeSeconds:null,lagMs:value(data.queueDelay,'avg','lagTime'),retries:value(data.queueDelay,'avg','retryCount')},
     worker:{errors:value(data.workersProject,'sum','errors'),cpuP50Ms:cpu===null?null:cpu/1000},databaseBytes:value(data.storage,'max','databaseSizeBytes'),errors:[],
+    hyperdrive:{usage:{project:hp,account:ha,projectRecent:hpr,accountRecent:hr,dailyLimit:100000,projected:projectDailyUsage(ha,hr,window.reportedThrough,window.dayStart),projectedProject:projectDailyUsage(hp,hpr,window.reportedThrough,window.dayStart),projectSustained24h:hpr===null?null:hpr*96},resultBytesToday:value(data.hyperdriveProject,'sum','resultBytes'),resultBytesMonth:monthBytes,projectedMonthBytes:monthBytes===null||recentBytes===null?null:Math.ceil(monthBytes+recentBytes/900*Math.max(0,monthEnd-window.reportedThrough)),monthStart},
   };
 }
 async function analytics(env: Env, timestamp: number) {
   const window={dayStart:Math.floor(timestamp/86400)*86400,reportedThrough:Math.max(Math.floor(timestamp/86400)*86400,timestamp-120)};
   if(!env.CLOUDFLARE_ANALYTICS_TOKEN)return {...parseInfrastructure({},timestamp,window),configured:false,errors:['La conexión de analítica aún no está configurada.']};
   try {
-    const key=new Request(`https://vyrsea.com/api/owner/infrastructure?cache=${env.CLOUDFLARE_ACCOUNT_ID}-${env.CLOUDFLARE_SCRIPT_NAME}-${env.DATABASE_PROVIDER??'d1'}-${env.CLOUDFLARE_D1_ID}-${env.CLOUDFLARE_QUEUE_ID}-${window.dayStart}-v3`);
+    const key=new Request(`https://vyrsea.com/api/owner/infrastructure?cache=${env.CLOUDFLARE_ACCOUNT_ID}-${env.CLOUDFLARE_SCRIPT_NAME}-${env.DATABASE_PROVIDER??'d1'}-${env.CLOUDFLARE_D1_ID}-${env.CLOUDFLARE_QUEUE_ID}-${window.dayStart}-v4`);
     if(warmCache?.key===key.url&&timestamp-warmCache.data.fetchedAt<60)return warmCache.data;
     let cache:Cache|undefined;
     try{cache=await caches.open('vyrsea-infrastructure-v1');const cached=await cache.match(key);if(cached){const data=await cached.json() as InfrastructureData;if(timestamp-data.fetchedAt<60){warmCache={key:key.url,data};return data;}}}catch{/* Cache failures must not hide valid provider metrics. */}
@@ -73,15 +87,9 @@ async function analytics(env: Env, timestamp: number) {
 }
 export async function infrastructure(env: Env, timestamp=nowSeconds()) {
   const realtime=async()=>{try{return await env.CHECK_QUEUE.metrics();}catch{return null;}};
-  const storage=async()=>{
-    if(env.DATABASE_PROVIDER!=='supabase')return null;
-    try{return await env.DB.prepare(`SELECT pg_database_size(current_database()) AS bytes,
-      COALESCE(SUM(pg_total_relation_size(c.oid)),0) AS applicationBytes FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-      WHERE n.nspname=? AND c.relkind IN ('r','m')`).bind(env.DATABASE_SCHEMA??'vyrsea').first<{bytes:number;applicationBytes:number}>();}
-    catch{return null;}
-  };
-  const [data,backlog,database]=await Promise.all([analytics(env,timestamp),realtime(),storage()]);
-  return {...data,databaseBytes:env.DATABASE_PROVIDER==='supabase'?database?.bytes??null:data.databaseBytes,
+  const [data,backlog,database]=await Promise.all([analytics(env,timestamp),realtime(),supabaseUsage(env,timestamp)]);
+  return {...data,databaseBytes:env.DATABASE_PROVIDER==='supabase'?database?.databaseBytes??null:data.databaseBytes,supabase:database,
+    activation:{emailReady:env.ALERTS_ENABLED==='1'&&Boolean(env.EMAIL&&env.EMAIL_FROM&&env.EMAIL_EVENTS_ENABLED==='1'&&env.CLOUDFLARE_EMAIL_ZONE_ID&&env.ALERTS_ENCRYPTION_KEY),webhooksReady:env.ALERTS_ENABLED==='1'&&Boolean(env.ALERTS_ENCRYPTION_KEY),customDomainsReady:env.CUSTOM_DOMAINS_ENABLED==='1'&&Boolean(env.CUSTOM_DOMAINS_TOKEN&&env.CUSTOM_DOMAINS_CNAME&&env.CUSTOM_DOMAINS_ZONE_ID),encryptedDestinations:Boolean(env.ALERTS_ENCRYPTION_KEY)},
     database:{provider:env.DATABASE_PROVIDER==='supabase'?'supabase':'d1',applicationBytes:database?.applicationBytes??null,storageLimitBytes:env.DATABASE_PROVIDER==='supabase'?500_000_000:null},
     queue:{...data.queue,backlog:backlog?.backlogCount??null,oldestAgeSeconds:backlog?(backlog.backlogCount&&backlog.oldestMessageTimestamp?Math.max(0,timestamp-Math.floor(backlog.oldestMessageTimestamp.getTime()/1000)):0):null}};
 }

@@ -27,7 +27,7 @@ Son vistas interactivas de ejemplo, sin escritura en la cuenta del visitante ni 
 
 Free está operativo en producción. Las cuotas, frecuencia y retención de cada plan se resuelven en servidor; las consultas fuera del histórico permitido se rechazan. El histórico se consulta por periodos y los resultados detallados se filtran en servidor (todos, errores o correctos) antes de paginar. El panel incluye búsqueda y filtros de incidencias y mantenimiento inmediato/programado con reanudación automática, disponible también en el panel básico. La comparativa avanzada de dominios se reserva a Pro / Agencia y Business, con comprobación de acceso en servidor.
 
-Starter, Pro / Agencia y Business tienen su alcance definido pero su contratación sigue deshabilitada. El email, los webhooks externos, los informes programados y los equipos todavía necesitan implementación. Las páginas públicas personalizables y exportables y los informes CSV bajo demanda están implementados. Ninguna cuota superior de cliente elimina el límite compartido de diez monitores de clientes de la beta; el propietario está exento de ese límite de registro, pero consume infraestructura.
+Starter, Pro / Agencia y Business tienen su alcance definido pero su contratación sigue deshabilitada. El email nativo de Cloudflare y los webhooks tienen destinos, confirmación, entregas y reintentos implementados, con su activación externa pendiente. El equipo Business ya tiene invitaciones, roles y auditoría. Los informes programados siguen pendientes. Las páginas públicas personalizables y exportables y los informes CSV bajo demanda están implementados. Ninguna cuota superior de cliente elimina el límite compartido de diez monitores de clientes de la beta; el propietario está exento de ese límite de registro, pero consume infraestructura.
 
 ## Verificación entre proveedores
 
@@ -52,4 +52,4 @@ El plan Free de producto no implica infraestructura gratuita para toda la oferta
 
 La portada, el panel, los metadatos, llms y las herramientas de agentes comparten el catálogo. Antes de publicar en vyrsea.com, preparar la migración del sitio existente y comprobar canónicas, HTTPS e indexación. El contenido actual está en español; una versión global en inglés requiere traducciones completas y URLs propias. El SEO técnico no garantiza una posición concreta.
 
-La creación y administración de cuentas Business con invitación de un uso y borrador comercial está documentada en [herramientas del panel](workspace-tools.md). Dodo continúa deshabilitado.
+La preparación comercial actual y sus activaciones están en [launch-features.md](launch-features.md). La creación y administración de cuentas Business con invitación de un uso y borrador comercial está documentada en [herramientas del panel](workspace-tools.md). Dodo continúa deshabilitado.

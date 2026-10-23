@@ -1,0 +1,20 @@
+ALTER TABLE status_pages ADD COLUMN logo_data TEXT NOT NULL DEFAULT '';
+ALTER TABLE status_pages ADD COLUMN favicon_data TEXT NOT NULL DEFAULT '';
+ALTER TABLE status_pages ADD COLUMN components_json TEXT NOT NULL DEFAULT '[]';
+CREATE TABLE team_members (workspace_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,role TEXT NOT NULL CHECK(role IN ('admin','operator','reader')),created_at INTEGER NOT NULL,PRIMARY KEY(workspace_id,user_id),CHECK(workspace_id<>user_id));
+CREATE TABLE team_invitations (id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,role TEXT NOT NULL CHECK(role IN ('admin','operator','reader')),token_hash TEXT NOT NULL UNIQUE,expires_at INTEGER NOT NULL,claimed_at INTEGER,UNIQUE(workspace_id,user_id));
+CREATE TABLE audit_events (id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,actor_id TEXT REFERENCES users(id) ON DELETE SET NULL,actor_name TEXT NOT NULL,action TEXT NOT NULL,resource TEXT NOT NULL,created_at INTEGER NOT NULL);
+CREATE INDEX audit_workspace_time ON audit_events(workspace_id,created_at);
+CREATE TABLE status_announcements (id TEXT PRIMARY KEY,page_id TEXT NOT NULL REFERENCES status_pages(id) ON DELETE CASCADE,title TEXT NOT NULL,severity TEXT NOT NULL CHECK(severity IN ('minor','major','critical')),state TEXT NOT NULL CHECK(state IN ('investigating','identified','monitoring','resolved')),component_ids TEXT NOT NULL DEFAULT '[]',published INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
+CREATE INDEX announcements_page_time ON status_announcements(page_id,created_at);
+CREATE TABLE status_updates (id TEXT PRIMARY KEY,announcement_id TEXT NOT NULL REFERENCES status_announcements(id) ON DELETE CASCADE,state TEXT NOT NULL CHECK(state IN ('investigating','identified','monitoring','resolved')),message TEXT NOT NULL,created_at INTEGER NOT NULL);
+CREATE INDEX updates_announcement_time ON status_updates(announcement_id,created_at);
+CREATE TABLE status_domains (id TEXT PRIMARY KEY,page_id TEXT NOT NULL UNIQUE REFERENCES status_pages(id) ON DELETE CASCADE,hostname TEXT NOT NULL UNIQUE,verification_token TEXT NOT NULL,verified_at INTEGER,provider_id TEXT,certificate_status TEXT NOT NULL DEFAULT 'unconfigured',validation_json TEXT NOT NULL DEFAULT '[]',checked_at INTEGER);
+CREATE TABLE alert_destinations (id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,kind TEXT NOT NULL CHECK(kind IN ('email','webhook')),target TEXT NOT NULL,secret_cipher TEXT,verification_hash TEXT,verification_expires INTEGER,verified_at INTEGER,enabled INTEGER NOT NULL DEFAULT 1,created_at INTEGER NOT NULL,UNIQUE(user_id,kind,target));
+CREATE INDEX alert_destinations_user ON alert_destinations(user_id);
+CREATE TABLE alert_deliveries (id TEXT PRIMARY KEY,destination_id TEXT NOT NULL REFERENCES alert_destinations(id) ON DELETE CASCADE,event_id TEXT NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','sending','accepted','delivered','failed','cancelled','uncertain')),attempts INTEGER NOT NULL DEFAULT 0,next_attempt_at INTEGER NOT NULL,lease_token TEXT,lease_until INTEGER NOT NULL DEFAULT 0,provider_id TEXT,last_status INTEGER,last_error TEXT,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,UNIQUE(destination_id,event_id));
+CREATE INDEX alert_deliveries_due ON alert_deliveries(state,next_attempt_at);
+CREATE INDEX alert_deliveries_provider ON alert_deliveries(provider_id);
+
+CREATE TABLE email_receipts (provider_id TEXT PRIMARY KEY,state TEXT NOT NULL CHECK(state IN ('delivered','failed')),created_at INTEGER NOT NULL);
+CREATE INDEX notifications_delivery_time ON notifications(created_at);

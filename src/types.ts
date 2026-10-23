@@ -12,6 +12,7 @@ export interface HourStat { monitorId: string; hour: number; total: number; succ
 export interface Incident { id: string; monitorId: string; monitorName: string; openedAt: number; resolvedAt: number | null; reason: string }
 export interface Notification { id: string; monitorId: string; kind: string; message: string; createdAt: number; readAt: number | null }
 export interface DashboardData {
+  workspace?:{id:string;name:string;role:'owner'|'admin'|'operator'|'reader'};
   user: User; monitors: Monitor[]; stats: HourStat[]; incidents: Incident[]; notifications: Notification[];
   maintenance: MaintenanceWindow[];
   limits: PlanLimits; windowDays: number; activeProbeProviders: string[]; multiProbeActive: boolean; serverTime: number;

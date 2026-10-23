@@ -167,5 +167,14 @@ export async function cleanup(env: Env, timestamp = nowSeconds()) {
   ] as const;
   const security=await env.DB.batch(statements.map(([table, field, cutoff, limit]) => env.DB.prepare(`DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE ${field}<? LIMIT ${limit})`).bind(cutoff)));
   security.forEach((result,index)=>{deleted[statements[index][0]]=result.meta.changes;pending ||= result.meta.changes>=statements[index][3];});
+  const operational=[
+    env.DB.prepare('DELETE FROM team_invitations WHERE id IN (SELECT id FROM team_invitations WHERE expires_at<? LIMIT 200)').bind(timestamp),
+    env.DB.prepare('DELETE FROM email_receipts WHERE provider_id IN (SELECT provider_id FROM email_receipts WHERE created_at<? LIMIT 500)').bind(timestamp-7*86400),
+    env.DB.prepare(`DELETE FROM audit_events WHERE id IN (SELECT a.id FROM audit_events a JOIN users u ON u.id=a.workspace_id JOIN plan_limits p ON p.id=u.plan_id WHERE a.created_at<?-(${historyDays})*86400 LIMIT 500)`).bind(dayBoundary),
+    env.DB.prepare(`DELETE FROM alert_deliveries WHERE id IN (SELECT d.id FROM alert_deliveries d JOIN alert_destinations a ON a.id=d.destination_id JOIN users u ON u.id=a.user_id JOIN plan_limits p ON p.id=u.plan_id WHERE d.created_at<?-(${historyDays})*86400 AND d.state NOT IN ('pending','sending') LIMIT 500)`).bind(dayBoundary),
+    env.DB.prepare(`DELETE FROM status_announcements WHERE id IN (SELECT a.id FROM status_announcements a JOIN status_pages s ON s.id=a.page_id JOIN users u ON u.id=s.user_id JOIN plan_limits p ON p.id=u.plan_id WHERE a.state='resolved' AND a.updated_at<?-(${historyDays})*86400 LIMIT 200)`).bind(dayBoundary),
+  ];
+  const extra=await env.DB.batch(operational);
+  extra.forEach((result,index)=>{const names=['team_invitations','email_receipts','audit_events','alert_deliveries','status_announcements'];deleted[names[index]]=result.meta.changes;pending ||=result.meta.changes>=[200,500,500,500,200][index];});
   return {deleted,pending};
 }

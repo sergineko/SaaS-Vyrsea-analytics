@@ -24,7 +24,8 @@ export type DatabaseBindings = Omit<Env, 'DB'> & { DB?: Database };
 
 const tables = new Set(['users', 'credentials', 'sessions', 'challenges', 'rate_limits', 'plan_limits', 'monitors',
   'checks', 'hourly_stats', 'incidents', 'notifications', 'check_jobs', 'maintenance_windows', 'recent_auth',
-  'recovery_codes', 'maintenance_jobs', 'status_pages', 'business_contracts', 'account_invitations']);
+  'recovery_codes', 'maintenance_jobs', 'status_pages', 'business_contracts', 'account_invitations',
+  'team_members','team_invitations','audit_events','status_announcements','status_updates','status_domains','alert_destinations','alert_deliveries','email_receipts']);
 
 // Lex the small SQL dialect shared with the legacy D1 implementation. Never
 // replace placeholders, function names or identifiers inside strings/comments.

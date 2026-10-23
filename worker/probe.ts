@@ -31,7 +31,7 @@ export function isPublicIPv6(ip: string): boolean {
   return first !== 0x2002 && !(first === 0x2001 && (second < 0x200 || second === 0xdb8)) && first !== 0x3fff;
 }
 
-async function publicDNS(host: string, signal: AbortSignal, fetcher: typeof fetch) {
+export async function publicDNS(host: string, signal: AbortSignal, fetcher: typeof fetch) {
   const results = await Promise.all(['A', 'AAAA'].map(async type => {
     const response = await fetcher(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=${type}`, {
       headers: { Accept: 'application/dns-json' }, signal,

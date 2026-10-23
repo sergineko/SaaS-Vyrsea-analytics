@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import {auditedDatabase} from './audit';
+import {auditStatement} from './team';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
@@ -46,6 +48,7 @@ owner.use('*', async (c, next) => {
   const user = c.get('user');
   if (!user.isOwner || user.accountStatus !== 'active') throw new HTTPException(403, { message: 'Esta sección es exclusiva del propietario.' });
   if (c.req.method !== 'GET') await rateLimit(c, 'owner', 30, 60);
+  if(!['GET','HEAD'].includes(c.req.method)){const base=c.env.DB;c.env={...c.env,DB:auditedDatabase(base,()=>auditStatement(c,c.req.method.toLowerCase(),c.req.path,base))};}
   await next();
 });
 owner.get('/infrastructure', async c => {
