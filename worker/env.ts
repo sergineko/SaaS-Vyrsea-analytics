@@ -19,6 +19,7 @@ export interface Env {
   CLOUDFLARE_HYPERDRIVE_ID?: string;
   CLOUDFLARE_QUEUE_ID?: string;
   CLOUDFLARE_SCRIPT_NAME?: string;
+  INFRA_CLOUDFLARE_PLAN?:'free'|'paid';
   ALERTS_ENABLED?: string;
   ALERTS_ENCRYPTION_KEY?: string;
   EMAIL_FROM?: string;

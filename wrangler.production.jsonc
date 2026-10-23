@@ -27,7 +27,8 @@
     "EMAIL_EVENTS_ENABLED": "0",
     "CUSTOM_DOMAINS_ENABLED": "0",
     "CLOUDFLARE_QUEUE_ID": "8d42e8848d624eb4b0017a0ed12927ad",
-    "CLOUDFLARE_SCRIPT_NAME": "vyrsea-monitor"
+    "CLOUDFLARE_SCRIPT_NAME": "vyrsea-monitor",
+    "INFRA_CLOUDFLARE_PLAN":"free"
   },
   "hyperdrive": [{"binding":"HYPERDRIVE","id":"c67a878ad5864e18b633d97348f8b75f"}],
   "queues": {

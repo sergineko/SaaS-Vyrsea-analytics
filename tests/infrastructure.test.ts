@@ -44,5 +44,8 @@ describe.sequential('Cloudflare usage telemetry',()=>{
   it('uses actual Hyperdrive query counts and result bytes without calling them Supabase billing',()=>{
     const metrics=parseInfrastructure({hyperdriveProject:[{count:900,sum:{resultBytes:2000}}],hyperdriveAccount:[{count:1100}],hyperdriveRecent:[{count:100}],hyperdriveProjectRecent:[{count:80,sum:{resultBytes:1000}}],hyperdriveMonth:[{sum:{resultBytes:100000}}]},43200,{dayStart:0,reportedThrough:43200});
     expect(metrics.hyperdrive?.usage).toMatchObject({project:900,account:1100,projected:5900,projectSustained24h:7680});expect(metrics.hyperdrive?.resultBytesMonth).toBe(100000);expect(metrics.hyperdrive?.projectedMonthBytes).toBeGreaterThan(100000);
+    const paid=parseInfrastructure(fixture,43200,{dayStart:0,reportedThrough:43200},'paid');
+    expect(paid.usage.workers).toMatchObject({dailyLimit:null,quota:{amount:10000000,period:'month',plan:'Paid'}});
+    expect(paid.hyperdrive?.usage).toMatchObject({dailyLimit:null,quota:{amount:null,period:'unlimited',plan:'Paid'}});
   });
 });

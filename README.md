@@ -1,6 +1,6 @@
 # Vyrsea
 
-La preparación comercial incorpora alertas de Cloudflare Email Service y webhooks con seguimiento, comunicados públicos, componentes agrupados, logo/favicon, verificación de dominio, equipo Business con permisos y auditoría y análisis de Supabase en Admin Propietario. Los envíos y el aprovisionamiento de dominios permanecen desactivados; no se ha contratado Workers Paid ni habilitado Dodo. [Estado, pruebas y activación](docs/launch-features.md).
+La preparación comercial incorpora alertas de Cloudflare Email Service y webhooks con seguimiento, comunicados públicos, componentes agrupados, logo/favicon, verificación de dominio, equipo Pro / Agencia y Business con permisos y auditoría y análisis de Supabase en Admin Propietario. Los envíos y el aprovisionamiento de dominios permanecen desactivados; no se ha contratado Workers Paid ni habilitado Dodo. [Estado, pruebas y activación](docs/launch-features.md).
 
 MVP de monitorización HTTP basado en el alcance gratuito de `Idea C.docx`. Frontend React + TypeScript + Vite + Tailwind, API Hono sobre Workers, PostgreSQL en Supabase mediante Hyperdrive, passkeys y Cloudflare Queues. No necesita VPS ni un servicio de correo para el acceso. El documento original y los datos locales no se publican en el repositorio. [Arquitectura, migración y operación de PostgreSQL](docs/postgresql.md).
 

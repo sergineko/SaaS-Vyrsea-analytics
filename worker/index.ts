@@ -33,7 +33,7 @@ app.use('/api/*', async (c, next) => {
 app.get('/api/health', async c => {
   const postgres=c.env.DATABASE_PROVIDER==='supabase';
   if(postgres)await c.env.DB.prepare('SELECT 1 AS ready').first();
-  return c.json({ok:true,service:'vyrsea',version:'0.4.2',database:postgres?'supabase':'d1'});
+  return c.json({ok:true,service:'vyrsea',version:'0.4.3',database:postgres?'supabase':'d1'});
 });
 app.get('/api/config', c => c.json({ turnstileSiteKey: c.env.TURNSTILE_SITE_KEY ?? '',
   registrationMode: 'approval', freeInactivityDays: 14,

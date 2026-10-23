@@ -16,6 +16,7 @@ if(options['--email-from']){
  source.vars.EMAIL_EVENTS_ENABLED=options['--email-events-ready']?'1':'0';
 }
 source.vars.ALERTS_ENABLED='1';
+source.vars.INFRA_CLOUDFLARE_PLAN='paid';
 if(options['--custom-domains-cname']){
  const hostname=options['--custom-domains-cname'];if(!/^[a-z0-9.-]+\.vyrsea\.com$/.test(hostname))throw new Error('Usa el CNAME de Vyrsea configurado en Cloudflare for SaaS.');
  source.vars.CUSTOM_DOMAINS_CNAME=hostname;source.vars.CUSTOM_DOMAINS_ZONE_ID=source.routes[0].zone_id;source.vars.CUSTOM_DOMAINS_ENABLED='1';source.assets.run_worker_first=true;
