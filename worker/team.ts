@@ -15,7 +15,9 @@ export function auditStatement(c:Context<AppEnv>,action:string,resource:string,d
 }
 export async function workspaceContext(c:Context<AppEnv>,actor:User){
   c.set('actor',actor);c.set('workspaceRole','owner');c.set('user',actor);
-  const id=c.req.path==='/api/workspaces'?undefined:c.req.header('X-Vyrsea-Workspace');
+  // Invitations are accepted by the signed-in person, even if they were viewing
+  // a different organization with a read-only role before opening the link.
+  const id=['/api/workspaces','/api/team/accept'].includes(c.req.path)?undefined:c.req.header('X-Vyrsea-Workspace');
   if(!id||id===actor.id)return;
   const row=await c.env.DB.prepare(`SELECT u.id,u.username,u.created_at AS createdAt,u.account_status AS accountStatus,
     u.plan_id AS planId,u.last_active_at AS lastActiveAt,t.role FROM team_members t JOIN users u ON u.id=t.workspace_id

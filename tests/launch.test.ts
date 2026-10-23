@@ -49,6 +49,15 @@ describe.sequential('Commercial preparation without paid activation',()=>{
    const response=await api('/subscription','GET',undefined,'other');expect(response.status).toBe(200);
    expect(await response.json()).toMatchObject({billingEnabled:false,subscription:{users:2,billing:{baseCents:6900,unitCents:800,seatCents:800,totalCents:7700}}});
  });
+ it('accepts a new organization invitation as the signed-in person while another read-only workspace is selected',async()=>{
+   await db.prepare("INSERT INTO team_members(workspace_id,user_id,role,created_at) VALUES('owner','member','reader',?)").bind(now()).run();
+   await db.prepare("UPDATE users SET plan_id='pro' WHERE id='other'").run();
+   const invited=await api('/team/invitations','POST',{username:'member',role:'operator'},'other');expect(invited.status).toBe(201);
+   const link=(await invited.json() as {invitationURL:string}).invitationURL,token=new URLSearchParams(new URL(link).hash.slice(1)).get('team');
+   expect((await api('/team/accept','POST',{token},'member','owner')).status).toBe(200);
+   expect((await api('/team/members','GET',undefined,'member','other')).status).toBe(403);
+   expect((await api('/owner/accounts','GET',undefined,'member','other')).status).toBe(403);
+ });
  it('rolls back a product change when its author audit cannot be saved',async()=>{
    await db.prepare("CREATE TRIGGER audit_fixture_failure BEFORE INSERT ON audit_events BEGIN SELECT RAISE(ABORT,'SYNTHETIC_AUDIT_FAILURE'); END").run();
    try{expect((await api('/monitors/'+monitor,'PATCH',{name:'Must roll back'})).status).toBe(500);expect((await db.prepare('SELECT name FROM monitors WHERE id=?').bind(monitor).first())!.name).toBe('API privada');}
