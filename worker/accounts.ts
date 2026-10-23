@@ -74,7 +74,7 @@ owner.get('/accounts', async c => {
   ]);
   const measured = usage.results[0] as Record<string, number>;
   return c.json({ accounts: accounts.results, usage: { ...measured, monitorLimit: MAX_MONITORS_TOTAL, accountLimit: 100 },
-    capacity: estimateCapacity(measured.checksPerDay, measured.activeMonitors, measured.fastestChecksPerDay), inactivityDays: 14 });
+    capacity: estimateCapacity(measured.checksPerDay, measured.activeMonitors, measured.fastestChecksPerDay),databaseProvider:c.env.DATABASE_PROVIDER==='supabase'?'supabase':'d1', inactivityDays: 14 });
 });
 const planInput = z.discriminatedUnion('planId', [
   z.object({planId:z.literal('business'),domainLimit:z.number().int().min(1).max(1_000_000),monitorLimit:z.number().int().min(1).max(1_000_000),historyDaysLimit:z.number().int().min(1).max(365)}).strict(),

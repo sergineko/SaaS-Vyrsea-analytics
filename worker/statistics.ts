@@ -8,15 +8,15 @@ export const dashboardStatsSQL=`SELECT h.monitor_id AS monitorId,?+CAST((h.hour-
   SUM(h.total) AS total,SUM(h.successful) AS successful,SUM(h.total_ms) AS totalMs
   FROM json_each(?) selected CROSS JOIN hourly_stats h
   WHERE h.monitor_id=selected.value AND h.hour>=? AND h.hour<?
-  GROUP BY h.monitor_id,CAST((h.hour-?)/? AS INTEGER) ORDER BY hour`;
+  GROUP BY 1,2 ORDER BY hour`;
 
 export async function dashboardStatistics(env:Env,userId:string,monitorIds:string[],since:number,days:number,timestamp:number) {
   if(!monitorIds.length)return {stats:[] as Statistic[],historyAsOf:timestamp};
   const hour=Math.floor(timestamp/3600)*3600,step=days*3600,ids=JSON.stringify([...monitorIds].sort());
   const query=(from:number,to:number)=>env.DB.prepare(dashboardStatsSQL)
-    .bind(since,since,step,step,ids,from,to,since,step).all<Statistic>();
+    .bind(since,since,step,step,ids,from,to).all<Statistic>();
   // Only closed hours are cached. Status, accounts, plans and the current hour
-  // always come from D1. Keys also change when a monitor is added or deleted.
+  // always come from the database. Keys also change when a monitor is added or deleted.
   let cache:Cache|undefined,key:Request|undefined,history:{rows:Statistic[];asOf:number}|undefined;
   try {
     cache=await caches.open('vyrsea-stats-v1');
@@ -29,7 +29,7 @@ export async function dashboardStatistics(env:Env,userId:string,monitorIds:strin
   const [current,closed]=await Promise.all([query(hour,hour+3600),history?Promise.resolve(null):query(since,hour)]);
   if(!history){
     history={rows:closed!.results,asOf:timestamp};
-    if(cache&&key)try{await cache.put(key,Response.json(history,{headers:{'Cache-Control':`max-age=${HISTORY_CACHE_SECONDS}`}}));}catch{/* No D1 writes for caching. */}
+    if(cache&&key)try{await cache.put(key,Response.json(history,{headers:{'Cache-Control':`max-age=${HISTORY_CACHE_SECONDS}`}}));}catch{/* No database writes for caching. */}
   }
   const buckets=new Map(history.rows.map(row=>[`${row.monitorId}:${row.hour}`,{...row}]));
   for(const row of current.results){

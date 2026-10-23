@@ -16,12 +16,13 @@ function value(rows: MetricRow[] | undefined, group: keyof MetricRow, field: str
 }
 export function infrastructureQuery(env: Env, timestamp: number) {
   const account=env.CLOUDFLARE_ACCOUNT_ID,db=env.CLOUDFLARE_D1_ID,queue=env.CLOUDFLARE_QUEUE_ID,script=env.CLOUDFLARE_SCRIPT_NAME;
-  if(![account,db,queue].every(id=>/^[a-f0-9-]{32,36}$/.test(id??''))||!/^vyrsea-[a-z0-9-]+$/.test(script??''))throw new Error('Invalid infrastructure configuration');
+  const postgres=env.DATABASE_PROVIDER==='supabase';
+  if(![account,queue,...(postgres?[]:[db])].every(id=>/^[a-f0-9-]{32,36}$/.test(id??''))||!/^vyrsea-[a-z0-9-]+$/.test(script??''))throw new Error('Invalid infrastructure configuration');
   const day=Math.floor(timestamp/86400)*86400, end=Math.max(day,timestamp-120), recent=end-900;
   const time=(start:number)=>`datetime_geq:${JSON.stringify(new Date(start*1000).toISOString())},datetime_lt:${JSON.stringify(new Date(end*1000).toISOString())}`;
   const definitions=[
     ['queues','queueMessageOperationsAdaptiveGroups',`queueId:${JSON.stringify(queue)}`,'billableOperations'],
-    ['d1','d1AnalyticsAdaptiveGroups',`databaseId:${JSON.stringify(db)}`,'rowsRead rowsWritten'],
+    ...(!postgres?[['d1','d1AnalyticsAdaptiveGroups',`databaseId:${JSON.stringify(db)}`,'rowsRead rowsWritten']]:[]),
     ['workers','workersInvocationsAdaptive',`scriptName:${JSON.stringify(script)}`,'requests errors'],
   ];
   const nodes=definitions.flatMap(([name,node,resource,sum])=>[
@@ -31,7 +32,7 @@ export function infrastructureQuery(env: Env, timestamp: number) {
     `${name}ProjectRecent:${node}(limit:1,filter:{${time(recent)},${resource}}){sum{${sum}}}`,
   ]);
   nodes.push(`queueDelay:queueMessageOperationsAdaptiveGroups(limit:1,filter:{${time(recent)},queueId:${JSON.stringify(queue)},actionType:"ReadMessage"}){avg{lagTime retryCount}}`);
-  nodes.push(`storage:d1StorageAdaptiveGroups(limit:1,filter:{date:${JSON.stringify(new Date(day*1000).toISOString().slice(0,10))},databaseId:${JSON.stringify(db)}}){max{databaseSizeBytes}}`);
+  if(!postgres)nodes.push(`storage:d1StorageAdaptiveGroups(limit:1,filter:{date:${JSON.stringify(new Date(day*1000).toISOString().slice(0,10))},databaseId:${JSON.stringify(db)}}){max{databaseSizeBytes}}`);
   return {query:`{viewer{accounts(filter:{accountTag:${JSON.stringify(account)}}){${nodes.join('\n')}}}}`,dayStart:day,reportedThrough:end};
 }
 export function parseInfrastructure(data: Dataset, timestamp: number, window: {dayStart:number;reportedThrough:number}): InfrastructureData {
@@ -51,7 +52,7 @@ async function analytics(env: Env, timestamp: number) {
   const window={dayStart:Math.floor(timestamp/86400)*86400,reportedThrough:Math.max(Math.floor(timestamp/86400)*86400,timestamp-120)};
   if(!env.CLOUDFLARE_ANALYTICS_TOKEN)return {...parseInfrastructure({},timestamp,window),configured:false,errors:['La conexión de analítica aún no está configurada.']};
   try {
-    const key=new Request(`https://vyrsea.com/api/owner/infrastructure?cache=${env.CLOUDFLARE_ACCOUNT_ID}-${env.CLOUDFLARE_SCRIPT_NAME}-${env.CLOUDFLARE_D1_ID}-${env.CLOUDFLARE_QUEUE_ID}-${window.dayStart}-v2`);
+    const key=new Request(`https://vyrsea.com/api/owner/infrastructure?cache=${env.CLOUDFLARE_ACCOUNT_ID}-${env.CLOUDFLARE_SCRIPT_NAME}-${env.DATABASE_PROVIDER??'d1'}-${env.CLOUDFLARE_D1_ID}-${env.CLOUDFLARE_QUEUE_ID}-${window.dayStart}-v3`);
     if(warmCache?.key===key.url&&timestamp-warmCache.data.fetchedAt<60)return warmCache.data;
     let cache:Cache|undefined;
     try{cache=await caches.open('vyrsea-infrastructure-v1');const cached=await cache.match(key);if(cached){const data=await cached.json() as InfrastructureData;if(timestamp-data.fetchedAt<60){warmCache={key:key.url,data};return data;}}}catch{/* Cache failures must not hide valid provider metrics. */}
@@ -72,6 +73,15 @@ async function analytics(env: Env, timestamp: number) {
 }
 export async function infrastructure(env: Env, timestamp=nowSeconds()) {
   const realtime=async()=>{try{return await env.CHECK_QUEUE.metrics();}catch{return null;}};
-  const [data,backlog]=await Promise.all([analytics(env,timestamp),realtime()]);
-  return {...data,queue:{...data.queue,backlog:backlog?.backlogCount??null,oldestAgeSeconds:backlog?(backlog.backlogCount&&backlog.oldestMessageTimestamp?Math.max(0,timestamp-Math.floor(backlog.oldestMessageTimestamp.getTime()/1000)):0):null}};
+  const storage=async()=>{
+    if(env.DATABASE_PROVIDER!=='supabase')return null;
+    try{return await env.DB.prepare(`SELECT pg_database_size(current_database()) AS bytes,
+      COALESCE(SUM(pg_total_relation_size(c.oid)),0) AS applicationBytes FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname=? AND c.relkind IN ('r','m')`).bind(env.DATABASE_SCHEMA??'vyrsea').first<{bytes:number;applicationBytes:number}>();}
+    catch{return null;}
+  };
+  const [data,backlog,database]=await Promise.all([analytics(env,timestamp),realtime(),storage()]);
+  return {...data,databaseBytes:env.DATABASE_PROVIDER==='supabase'?database?.bytes??null:data.databaseBytes,
+    database:{provider:env.DATABASE_PROVIDER==='supabase'?'supabase':'d1',applicationBytes:database?.applicationBytes??null,storageLimitBytes:env.DATABASE_PROVIDER==='supabase'?500_000_000:null},
+    queue:{...data.queue,backlog:backlog?.backlogCount??null,oldestAgeSeconds:backlog?(backlog.backlogCount&&backlog.oldestMessageTimestamp?Math.max(0,timestamp-Math.floor(backlog.oldestMessageTimestamp.getTime()/1000)):0):null}};
 }

@@ -144,7 +144,7 @@ credentialSecurity.post('/recovery/verify', async c => {
   const key = await verifyRegistration(c, saved.challenge);
   await expireInactiveAccounts(c.env, nowSeconds(), saved.user_id);
   const token = randomToken(), sessionHash = await digest(token);
-  // Every mutation is conditional on the same unused code; D1 batch commits atomically.
+  // Every mutation is conditional on the same unused code; the batch commits atomically.
   // In particular, a competing request cannot save a key or mint a session after consumption.
   const guard = 'EXISTS(SELECT 1 FROM recovery_codes WHERE user_id=? AND code_hash=?)';
   const params = [saved.user_id, saved.context] as const;

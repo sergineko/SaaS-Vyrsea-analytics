@@ -1,6 +1,6 @@
 # Vyrsea
 
-MVP de monitorización HTTP basado en el alcance gratuito de `Idea C.docx`. Frontend React + TypeScript + Vite + Tailwind, API Hono sobre Workers, D1 con Drizzle, passkeys y Cloudflare Queues. No necesita VPS, Supabase ni un servicio de correo. El documento de producto original y los datos locales no se publican en el repositorio.
+MVP de monitorización HTTP basado en el alcance gratuito de `Idea C.docx`. Frontend React + TypeScript + Vite + Tailwind, API Hono sobre Workers, PostgreSQL en Supabase mediante Hyperdrive, passkeys y Cloudflare Queues. No necesita VPS ni un servicio de correo para el acceso. El documento original y los datos locales no se publican en el repositorio. [Arquitectura, migración y operación de PostgreSQL](docs/postgresql.md).
 
 Repositorio: [sergineko/SaaS-Vyrsea-analytics](https://github.com/sergineko/SaaS-Vyrsea-analytics). La rama `main` ejecuta validación de tipos, pruebas y compilación mediante GitHub Actions. Cloudflare Builds tiene su propia conexión para validar y publicar esa rama; los secretos de despliegue permanecen en Cloudflare, fuera de GitHub y del código.
 
@@ -10,7 +10,7 @@ Repositorio: [sergineko/SaaS-Vyrsea-analytics](https://github.com/sergineko/SaaS
 
 - Registro y acceso con passkeys verificadas en el servidor. Sesiones de siete días, tokens aleatorios almacenados como SHA-256, cookies HttpOnly y SameSite Strict; en HTTPS usan Secure y prefijo `__Host-`.
 - Seguridad de acceso: passkeys de respaldo y ocho códigos de recuperación de un solo uso, almacenados como hashes. La recuperación sustituye las claves y revoca las sesiones anteriores. Requiere [guardar previamente el kit](docs/access-recovery.md).
-- Plan **Free: 1 dominio registrable y 2 monitores en total por cuenta**, con límites atómicos en SQLite. Los monitores pausados también ocupan capacidad. La beta conserva además un tope técnico compartido de **10 monitores de clientes**; el propietario está exento de cuotas de dominios y monitores. Los recursos Free siguen siendo finitos.
+- Plan **Free: 1 dominio registrable y 2 monitores en total por cuenta**, con límites atómicos en la base de datos. Los monitores pausados también ocupan capacidad. La beta conserva además un tope técnico compartido de **10 monitores de clientes**; el propietario está exento de cuotas de dominios y monitores. Los recursos Free siguen siendo finitos.
 - Agrupación automática del dominio principal y sus subdominios, vista por dominios, filtros y cuotas visibles. La identificación usa Public Suffix List, incluidos sufijos como `co.uk` y proveedores como `github.io`.
 - Cuotas independientes: Starter permite repartir los 15 monitores entre 2 dominios sin registrar el máximo de 5. Demos separadas: `/?demo` (Free), `/?demo=pro` (cartera avanzada) y `/?demo=business` (equipo, personalización e informe CSV de ejemplo). Son datos simulados y no cambian el plan real; las integraciones externas y Dodo Payments siguen deshabilitados.
 - Alta, renombrado, pausa, reanudación y eliminación. Para cambiar la URL se crea un monitor nuevo, evitando mezclar históricos.
@@ -45,9 +45,9 @@ Con la configuración de origen local, `pnpm run preview` solo sirve para revisa
 
 ## Desplegar en tu Cloudflare Free
 
-El MVP está publicado en [vyrsea.com](https://vyrsea.com), con D1, Queues, Turnstile y aprobación obligatoria. Algunos resolutores pueden conservar la antigua dirección durante la propagación DNS. No registres cuentas reales en `workers.dev`: las passkeys y escrituras están vinculadas al origen final `https://vyrsea.com`.
+El MVP está publicado en [vyrsea.com](https://vyrsea.com), con Supabase, Hyperdrive, Queues, Turnstile y aprobación obligatoria. No registres cuentas reales en `workers.dev`: las passkeys y escrituras están vinculadas al origen final `https://vyrsea.com`.
 
-Los recursos remotos están separados con nombres `vyrsea-*`: `vyrsea-db`, `vyrsea-checks` y `vyrsea-dead-letters`. Se ha verificado Workers Free en la cuenta. El flujo remoto aplica las migraciones numeradas antes de publicar. La configuración pública de producción está en `wrangler.production.jsonc`; `wrangler.jsonc` conserva el entorno local. El secreto de Turnstile se guarda como Worker Secret, nunca en Git.
+Los recursos remotos están separados: proyecto Supabase `vyrsea`, `vyrsea-hyperdrive`, `vyrsea-checks` y `vyrsea-dead-letters`. D1 `vyrsea-db` se conserva como copia del corte. La configuración pública de producción está en `wrangler.production.jsonc`; `wrangler.jsonc` conserva D1 local para compatibilidad. Los cambios del esquema PostgreSQL se aplican explícitamente antes de publicar código compatible; Builds no recibe una contraseña administrativa. Los secretos de ejecución permanecen fuera de Git.
 
 La zona DNS usa Cloudflare y la ruta `vyrsea.com/*` entrega el Worker y sus Static Assets. El registro A raíz está proxied y apunta a `192.0.2.1`: es un destino de documentación sin servidor de origen, por lo que no debe desactivarse el proxy. Las reglas de zona redirigen `www` al dominio raíz y HTTP a HTTPS, conservando ruta y consulta. La antigua entrada `/es` redirige a `/`; las demás rutas inexistentes devuelven 404. Los registros de correo de IONOS se conservan. Consulta la [operación del dominio](docs/operations.md#dominio-publicado).
 
@@ -59,7 +59,7 @@ pnpm run check
 pnpm run deploy:production
 ```
 
-El despliegue compila, comprueba el HTML público, aplica migraciones pendientes y publica Worker + Static Assets. La configuración exige HTTPS, un UUID D1 real y una clave pública de Turnstile. Si falta su secreto, el servidor mantiene el registro desactivado. En esta estación Wrangler utiliza `XDG_CONFIG_HOME=.wrangler/config`; ese directorio está ignorado por Git.
+El despliegue compila, comprueba el HTML público y publica Worker + Static Assets. Producción exige HTTPS, una referencia Hyperdrive válida y Turnstile. Si falta su secreto, el servidor mantiene el registro desactivado. En esta estación Wrangler utiliza `XDG_CONFIG_HOME=.wrangler/config`; ese directorio está ignorado por Git.
 
 La conexión de Cloudflare Builds está configurada con `pnpm run check` como compilación y `pnpm run deploy:production` como despliegue. Utiliza Node 24, pnpm 11.25.0 y caché de dependencias. Las vistas previas de otras ramas están deshabilitadas para evitar desplegar pruebas contra D1 de producción. Comprueba el resultado de cada compilación en Cloudflare; guardar la conexión o pasar GitHub Actions por sí solos no confirman una publicación. Consulta el [flujo y los permisos de despliegue](docs/deployment.md).
 
@@ -74,11 +74,12 @@ La configuración reduce consumo; **no promete capacidad ilimitada ni sustituye 
 | Sondas | 10 monitores Free × 96/día = 960/día como carga base |
 | Queues | Mensajes con hasta 4 monitores y hasta 3 consumidores; aprox. 864–2.880 operaciones/día para diez monitores Free sin reintentos, según horarios y agrupación |
 | Manuales | Respetan el intervalo del plan (Free: 15 minutos); no se suman a una comprobación ya reservada |
-| D1 | Consultas indexadas, ventanas de histórico autorizadas por cuenta, paginación, agregados por hora y limpieza diaria acotada |
+| PostgreSQL | Consultas indexadas, retención por cuenta, paginación, agregados por hora y limpieza diaria acotada. Supabase Free: 500 MB |
+| Hyperdrive | Conexiones agrupadas, TLS verificado, caché SQL desactivada, 5 conexiones al origen. Free: 100.000 consultas/día |
 | CPU | Sin SSR ni hash de contraseñas; trabajo de red acotado. Validar los 10 ms de CPU en el entorno remoto |
-| Servicios activos | Workers, Static Assets, D1, Queues y Turnstile |
+| Servicios activos | Workers, Static Assets, Supabase, Hyperdrive, Queues y Turnstile |
 
-No se activa R2 para el MVP: con este volumen basta la retención de D1. Su archivo histórico queda previsto para una siguiente etapa, evitando añadir requisitos de cuenta innecesarios. Los correos a clientes, Dodo Payments, PDF, certificados SSL, RDAP, capturas, páginas públicas y sondas independientes quedan fuera de esta entrega.
+No se activa R2 para el MVP: el histórico permanece en PostgreSQL con retención por plan. Los correos a clientes, Dodo Payments, PDF, certificados SSL, RDAP, capturas y sondas independientes siguen pendientes; las páginas públicas de estado ya están disponibles.
 
 ## Verificación
 

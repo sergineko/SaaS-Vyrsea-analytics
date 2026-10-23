@@ -48,7 +48,7 @@ export async function rateLimit(c: Context<AppEnv>, scope: string, limit: number
   const timestamp = nowSeconds();
   const identity = c.get('user')?.id ?? c.req.header('CF-Connecting-IP') ?? 'local';
   const key = `${scope}:${await digest(identity)}:${Math.floor(timestamp / windowSeconds)}`;
-  const row = await c.env.DB.prepare('INSERT INTO rate_limits(key,count,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1 RETURNING count')
+  const row = await c.env.DB.prepare('INSERT INTO rate_limits(key,count,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=rate_limits.count+1 RETURNING count')
     .bind(key, timestamp + windowSeconds).first<{ count: number }>();
   if (!row || row.count > limit) throw new HTTPException(429, { message: 'Demasiadas solicitudes. Espera unos minutos e inténtalo de nuevo.' });
 }

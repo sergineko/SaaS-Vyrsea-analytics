@@ -1,5 +1,7 @@
 # Limpieza automática del histórico
 
+La tarea también funciona en [PostgreSQL mediante Hyperdrive](postgresql.md). Las cifras de filas D1 de los ensayos siguientes describen el sistema anterior; la retención y el horario siguen vigentes.
+
 Una tarea interna usa el Cron de un minuto que ya tiene Vyrsea. Comienza la limpieza diaria a las **03:17 UTC**, sin otra cola ni otro binding Cron. El horario UTC no cambia con el horario de verano. La pantalla del propietario muestra el estado y el recuento de los lotes terminados.
 
 La retención se obtiene de cada cuenta: Free 7 días, Starter 30, Pro / Agencia 90 y Business el número de días personalizado por el propietario. Cambiar Business en **Accesos y cuentas → Configurar plan** modifica la retención; no crea una suscripción ni realiza cobros. La cuenta del propietario conserva inicialmente 90 días.

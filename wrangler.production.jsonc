@@ -20,18 +20,12 @@
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFhA6rhUzje32QRc",
     "PUBLIC_SITE_URL": "https://vyrsea.com",
     "CLOUDFLARE_ACCOUNT_ID": "93d96c1211328e81e46cb2bc8af30d47",
-    "CLOUDFLARE_D1_ID": "369925d9-8f07-48b0-a255-be77a88b326d",
+    "DATABASE_PROVIDER": "supabase",
+    "DATABASE_SCHEMA": "vyrsea",
     "CLOUDFLARE_QUEUE_ID": "8d42e8848d624eb4b0017a0ed12927ad",
     "CLOUDFLARE_SCRIPT_NAME": "vyrsea-monitor"
   },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "vyrsea-db",
-      "database_id": "369925d9-8f07-48b0-a255-be77a88b326d",
-      "migrations_dir": "migrations"
-    }
-  ],
+  "hyperdrive": [{"binding":"HYPERDRIVE","id":"c67a878ad5864e18b633d97348f8b75f"}],
   "queues": {
     "producers": [
       {

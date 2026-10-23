@@ -69,8 +69,8 @@ export async function recordResult(env: Env, job: CheckJob, result: ProbeResult,
     AND ((w.starts_at<=? AND MIN(w.ends_at,COALESCE(w.cancelled_at,w.ends_at))>?)
     OR (w.starts_at<=? AND MIN(w.ends_at,COALESCE(w.cancelled_at,w.ends_at))>?)))`;
   const maintenanceTimes = [job.slot,job.slot,timestamp,timestamp] as const;
-  // A single D1 transaction: the monitor's last_slot changes LAST, guarding every statement.
-  // D1 batches are atomic: concurrent duplicate deliveries still cannot write a slot twice.
+  // A single atomic transaction: the monitor's last_slot changes LAST, guarding
+  // every statement. PostgreSQL serialization retries preserve delivery idempotency.
   await env.DB.batch([
     // A planned gap breaks consecutive failures. A success resets them in the
     // final monitor update already; an open incident still recovers below.
@@ -85,7 +85,7 @@ export async function recordResult(env: Env, job: CheckJob, result: ProbeResult,
       .bind(id, timestamp, result.ok ? 1 : 0, result.statusCode, result.responseMs, result.error, job.monitorId, job.slot,...maintenanceTimes),
     env.DB.prepare(`INSERT INTO hourly_stats(monitor_id,hour,total,successful,total_ms)
       SELECT id,?,1,?,? FROM monitors WHERE id=? AND last_slot<? AND paused=0 ${outsideMaintenance}
-      ON CONFLICT(monitor_id,hour) DO UPDATE SET total=total+1,successful=successful+excluded.successful,total_ms=total_ms+excluded.total_ms`)
+      ON CONFLICT(monitor_id,hour) DO UPDATE SET total=hourly_stats.total+1,successful=hourly_stats.successful+excluded.successful,total_ms=hourly_stats.total_ms+excluded.total_ms`)
       .bind(hour, result.ok ? 1 : 0, result.responseMs, job.monitorId, job.slot,...maintenanceTimes),
     // Branch only on the immutable probe result. Monitor state must still be
     // checked inside this transaction, including concurrent/out-of-order results.

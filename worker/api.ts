@@ -1,11 +1,9 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { drizzle } from 'drizzle-orm/d1';
-import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppEnv } from './env';
 import { nowSeconds } from './env';
-import { monitors } from './schema';
+import type { Monitor } from '../src/types';
 import { normalizeTarget } from './probe';
 import { rateLimit, sessionUser } from './security';
 import { dispatchPending, reserveCheck } from './jobs';
@@ -27,10 +25,14 @@ api.use('*', async (c, next) => {
   await next();
 });
 const monitorInput = z.object({ name: z.string().trim().min(1).max(60), url: z.string().max(2048) }).strict();
+const monitorColumns = `id,user_id AS userId,name,url,root_domain AS rootDomain,paused,status,failures,
+  last_checked_at AS lastCheckedAt,last_status_code AS lastStatusCode,last_response_ms AS lastResponseMs,
+  last_error AS lastError,next_check_at AS nextCheckAt,created_at AS createdAt,probe_mask AS probeMask`;
+const mapMonitor = (row: Monitor) => ({...row,paused:Boolean(row.paused)});
 async function owned(c: Parameters<typeof sessionUser>[0], id: string) {
-  const row = await drizzle(c.env.DB).select().from(monitors).where(and(eq(monitors.id, id), eq(monitors.userId, c.get('user').id))).get();
+  const row = await c.env.DB.prepare(`SELECT ${monitorColumns} FROM monitors WHERE id=? AND user_id=?`).bind(id,c.get('user').id).first<Monitor>();
   if (!row) throw new HTTPException(404, { message: 'No se ha encontrado el monitor.' });
-  return row;
+  return mapMonitor(row);
 }
 function target(value: string) {
   try { return normalizeTarget(value); } catch (e) { throw new HTTPException(400, { message: (e as Error).message }); }
@@ -45,7 +47,7 @@ api.get('/dashboard', async c => {
   if (days > limits.historyDays) throw new HTTPException(403, { message: `Tu plan incluye ${limits.historyDays} días de histórico.` });
   const timestamp=nowSeconds();
   const since = Math.max(timestamp - limits.historyDays * 86400, Math.floor(timestamp / 3600) * 3600 - (days * 24 - 1) * 3600);
-  const items=await drizzle(c.env.DB).select().from(monitors).where(eq(monitors.userId,userId)).all();
+  const items=(await c.env.DB.prepare(`SELECT ${monitorColumns} FROM monitors WHERE user_id=?`).bind(userId).all<Monitor>()).results.map(mapMonitor);
   const [statistics, incidents, notifications, windows] = await Promise.all([
     dashboardStatistics(c.env,userId,items.map(item=>item.id),since,days,timestamp),
     c.env.DB.prepare(`SELECT i.id,i.monitor_id AS monitorId,m.name AS monitorName,i.opened_at AS openedAt,i.resolved_at AS resolvedAt,i.reason
@@ -87,7 +89,7 @@ api.post('/monitors', async c => {
   try { rootDomain = registeredDomain(url); } catch (error) { throw new HTTPException(400, { message: (error as Error).message }); }
   await backfillDomains(c.env, c.get('user').id);
   const id = crypto.randomUUID();
-  await drizzle(c.env.DB).insert(monitors).values({ id, userId: c.get('user').id, name: input.name, url, rootDomain, nextCheckAt: nowSeconds(), createdAt: nowSeconds() }).run();
+  await c.env.DB.prepare('INSERT INTO monitors(id,user_id,name,url,root_domain,next_check_at,created_at) VALUES(?,?,?,?,?,?,?)').bind(id,c.get('user').id,input.name,url,rootDomain,nowSeconds(),nowSeconds()).run();
   return c.json({ id }, 201);
 });
 api.patch('/monitors/:id', async c => {
@@ -97,17 +99,17 @@ api.patch('/monitors/:id', async c => {
   const changedURL = input.url !== undefined && target(input.url) !== monitor.url;
   const timestamp = nowSeconds();
   const plan = await accountPlan(c.env, c.get('user').id);
-  const db = drizzle(c.env.DB);
   // A changed destination starts a fresh monitor history. Prevent attribution to the old URL.
   if (changedURL) throw new HTTPException(400, { message: 'Para cambiar el destino, elimina este monitor y crea uno nuevo. Así conservarás estadísticas coherentes.' });
-  await db.update(monitors).set({ ...(input.name !== undefined ? { name: input.name } : {}),
-    ...(input.paused !== undefined ? { paused: input.paused, nextCheckAt: timestamp + plan.intervalSeconds } : {}),
-  }).where(eq(monitors.id, monitor.id)).run();
+  const changes:string[]=[],values:unknown[]=[];
+  if(input.name!==undefined){changes.push('name=?');values.push(input.name);}
+  if(input.paused!==undefined){changes.push('paused=?','next_check_at=?');values.push(Number(input.paused),timestamp+plan.intervalSeconds);}
+  if(changes.length)await c.env.DB.prepare(`UPDATE monitors SET ${changes.join(',')} WHERE id=? AND user_id=?`).bind(...values,monitor.id,c.get('user').id).run();
   return c.json({ ok: true });
 });
 api.delete('/monitors/:id', async c => {
   const monitor = await owned(c, c.req.param('id'));
-  await drizzle(c.env.DB).delete(monitors).where(eq(monitors.id, monitor.id)).run();
+  await c.env.DB.prepare('DELETE FROM monitors WHERE id=? AND user_id=?').bind(monitor.id,c.get('user').id).run();
   return c.json({ ok: true });
 });
 api.post('/monitors/:id/check', async c => {

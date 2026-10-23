@@ -7,10 +7,10 @@ La integración de Cloudflare Workers and Pages está conectada a `sergineko/Saa
 1. GitHub Actions ejecuta `pnpm run check` para validar tipos, pruebas y compilación. No contiene una credencial de Cloudflare ni publica.
 2. Cloudflare Builds escucha los cambios de `main` e instala las dependencias del proyecto. Usa `NODE_VERSION=24`, `PNPM_VERSION=11.25.0` y caché de compilación.
 3. El comando de compilación `pnpm run check` vuelve a ejecutar las comprobaciones en el propio entorno de publicación. Un fallo impide continuar al despliegue.
-4. `pnpm run deploy:production` compila los assets, comprueba el sitio prerenderizado, aplica las migraciones D1 pendientes y publica con `wrangler.production.jsonc`. Cualquier error detiene el proceso.
+4. `pnpm run deploy:production` compila los assets, comprueba el sitio prerenderizado y publica con `wrangler.production.jsonc`. Usa PostgreSQL mediante el binding Hyperdrive. Las migraciones de `migrations/postgres/` se aplican explícitamente antes de publicar cambios que las necesiten; Builds no recibe la contraseña administrativa. Cualquier error de compilación o publicación detiene el proceso.
 5. Comprueba que la compilación y el despliegue finalicen correctamente en Cloudflare y que `/api/health` devuelva el servicio `vyrsea` en el dominio final.
 
-Las vistas previas están deshabilitadas. No actives publicaciones de ramas o pull requests contra los recursos actuales: D1 y Queues son de producción. Antes de añadir vistas previas, crea recursos y configuración independientes.
+Las vistas previas están deshabilitadas. No actives publicaciones de ramas o pull requests contra los recursos actuales: PostgreSQL, Hyperdrive y Queues son de producción. Antes de añadir vistas previas, crea recursos y configuración independientes. GitHub Actions utiliza un PostgreSQL 17 desechable para sus pruebas.
 
 ## Credenciales
 
@@ -22,7 +22,7 @@ No reutilices la sesión OAuth del terminal como credencial de CI. Para rotar el
 
 ## Cambios de datos y recuperación
 
-Las migraciones ya aplicadas no se editan: se añade otra numerada. Un fallo de publicación después de aplicar una migración puede dejar el esquema nuevo con el Worker anterior. Utiliza cambios aditivos compatibles, exporta D1 antes de cambios de esquema o datos y prepara una transición en varias publicaciones si fuese necesario. Volver a una versión anterior del Worker no revierte la base de datos.
+Las migraciones ya aplicadas no se editan: se añade otra numerada. Un fallo de publicación después de aplicar una migración puede dejar el esquema nuevo con el Worker anterior. Utiliza cambios aditivos compatibles, exporta PostgreSQL antes de cambios de esquema o datos y prepara una transición en varias publicaciones si fuese necesario. Volver a una versión anterior del Worker no revierte la base de datos. Consulta [la migración desde D1 y el procedimiento de recuperación](postgresql.md).
 
 Un despliegue manual sigue disponible desde un terminal autenticado:
 

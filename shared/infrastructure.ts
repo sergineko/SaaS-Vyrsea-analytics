@@ -8,6 +8,7 @@ export interface InfrastructureData {
   queue: { backlog: number | null; oldestAgeSeconds: number | null; lagMs: number | null; retries: number | null };
   worker: { errors: number | null; cpuP50Ms: number | null };
   databaseBytes: number | null; errors: string[];
+  database?: {provider:'d1'|'supabase'; applicationBytes:number|null; storageLimitBytes:number|null};
   retention?: {runDay:string;startedAt:number;updatedAt:number;completedAt:number|null;pending:number;deleted:Record<string,number>} | null;
 }
 export function projectDailyUsage(used: number | null, recent: number | null, reportedThrough: number, dayStart: number) {

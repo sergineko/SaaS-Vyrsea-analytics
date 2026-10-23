@@ -36,5 +36,7 @@ describe.sequential('Cloudflare usage telemetry',()=>{
     const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_D1_ID:'b'.repeat(32),CLOUDFLARE_QUEUE_ID:'c'.repeat(32),CLOUDFLARE_SCRIPT_NAME:'vyrsea-monitor'};
     const q=infrastructureQuery(env as never,43200);expect(q.dayStart).toBe(0);expect(q.reportedThrough).toBe(43080);expect(q.query).toContain('queueId:"'+env.CLOUDFLARE_QUEUE_ID+'"');expect(q.query).toContain('d1Account:');expect(q.query).toContain('workersRecent:');expect(q.query).not.toContain('token');
     expect(()=>infrastructureQuery({...env,CLOUDFLARE_SCRIPT_NAME:'other-project'} as never,43200)).toThrow();
+    const postgres=infrastructureQuery({...env,DATABASE_PROVIDER:'supabase',CLOUDFLARE_D1_ID:undefined} as never,43200);
+    expect(postgres.query).not.toContain('d1Analytics');expect(postgres.query).not.toContain('d1Storage');expect(postgres.query).toContain('workersRecent:');
   });
 });

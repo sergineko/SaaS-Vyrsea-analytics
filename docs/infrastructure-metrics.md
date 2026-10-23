@@ -1,5 +1,7 @@
 # Métricas reales y capacidad
 
+Desde el 23-10-2026 producción utiliza [Supabase y Hyperdrive](postgresql.md). El panel muestra el tamaño real de PostgreSQL y ya no presenta escrituras o lecturas D1 como consumo de Vyrsea. Las explicaciones y ensayos D1 de este documento son la referencia anterior a la migración y siguen aplicándose al modo local de compatibilidad. Workers y Queues conservan sus métricas reales de Cloudflare.
+
 **Admin Propietario** consulta Cloudflare desde el servidor, exclusivamente para el propietario activo. El token `vyrsea-analytics` tiene únicamente `Account Analytics: Read` sobre la cuenta autorizada. Se guarda como `CLOUDFLARE_ANALYTICS_TOKEN`, nunca como variable VITE ni en el repositorio. La instalación temporal autorizada se elimina después de guardarlo. El token puede leer analítica de toda la cuenta; las consultas de aplicación muestran recursos de Vyrsea y totales agregados de la cuenta para interpretar las cuotas compartidas. No permiten elegir recursos, fechas ni consultas desde el navegador.
 
 La API utiliza `queueMessageOperationsAdaptiveGroups`, `d1AnalyticsAdaptiveGroups`, `d1StorageAdaptiveGroups` y `workersInvocationsAdaptive`. Consulta la cola, D1 y el script fijados en `wrangler.production.jsonc`. Los totales de cuenta no exponen nombres, consultas SQL ni datos de otras aplicaciones.

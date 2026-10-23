@@ -1,5 +1,7 @@
 # Aprobación de cuentas e inactividad
 
+La política de acceso también se conserva en [PostgreSQL](postgresql.md). `grant-owner.mjs --remote` utiliza la conexión administrativa PostgreSQL de `DATABASE_URL`; `--local` mantiene D1 local. No cambies roles o planes en la copia D1 esperando que cambien en producción. Las cuentas migradas conservan su UUID, passkeys y derechos.
+
 El MVP utiliza una beta con aprobación manual obligatoria. No existe un modo público para saltarse la revisión ni una asignación automática de propietario a la primera cuenta.
 
 ## Registro y revisión

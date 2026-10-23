@@ -12,6 +12,7 @@ import { BILLING, PLAN_CATALOG } from '../shared/plans';
 import { account, owner } from './accounts';
 import { runRetentionJob } from './retention-job';
 import {publicStatus} from './status-pages';
+import {withDatabase, type DatabaseBindings} from './database';
 
 const app = new Hono<AppEnv>();
 app.use('/api/*', bodyLimit({ maxSize: 16384, onError: c => c.json({ error: 'Solicitud demasiado grande.' }, 413) }));
@@ -27,7 +28,11 @@ app.use('/api/*', async (c, next) => {
   }
   await next();
 });
-app.get('/api/health', c => c.json({ ok: true, service: 'vyrsea', version: '0.2.0' }));
+app.get('/api/health', async c => {
+  const postgres=c.env.DATABASE_PROVIDER==='supabase';
+  if(postgres)await c.env.DB.prepare('SELECT 1 AS ready').first();
+  return c.json({ok:true,service:'vyrsea',version:'0.3.0',database:postgres?'supabase':'d1'});
+});
 app.get('/api/config', c => c.json({ turnstileSiteKey: c.env.TURNSTILE_SITE_KEY ?? '',
   registrationMode: 'approval', freeInactivityDays: 14,
   registrationAvailable: isLocal(c.env.APP_ORIGIN) || Boolean(c.env.TURNSTILE_SITE_KEY && c.env.TURNSTILE_SECRET_KEY) }));
@@ -56,27 +61,36 @@ app.onError((error, c) => {
   if (/CUSTOM_PLAN_REQUIRED/.test(detail)) return c.json({ error: 'El plan Business necesita cuotas personalizadas configuradas por contrato.' }, 409);
   if (/MAINTENANCE_OVERLAP/.test(detail)) return c.json({ error: 'Este horario coincide con otro mantenimiento del monitor.' }, 409);
   if (/MAINTENANCE_CAPACITY/.test(detail)) return c.json({ error: 'Puedes tener hasta cinco mantenimientos activos o programados por monitor.' }, 409);
-  if (/ACCOUNT_CAPACITY|UNIQUE constraint failed: users.username/.test(detail)) return c.json({ error: 'No se puede crear la cuenta: el nombre está ocupado o la instalación ha alcanzado su capacidad.' }, 409);
+  if (/ACCOUNT_CAPACITY|UNIQUE constraint failed: users.username/.test(detail) || ((error as {code?:string;constraint_name?:string}).code==='23505' && (error as {constraint_name?:string}).constraint_name==='users_username_key')) return c.json({ error: 'No se puede crear la cuenta: el nombre está ocupado o la instalación ha alcanzado su capacidad.' }, 409);
   if (error instanceof SyntaxError) return c.json({ error: 'El formato de la solicitud no es válido.' }, 400);
   // Never log credentials, sessions, passkey responses, or full target URLs.
-  console.error(JSON.stringify({ event: 'request_failed', path: new URL(c.req.url).pathname, type: error.name }));
+  console.error(JSON.stringify({ event: 'request_failed', path: new URL(c.req.url).pathname, type: error.name, sqlState:(error as {code?:string}).code }));
   return c.json({ error: 'No se pudo completar la operación. Vuelve a intentarlo.' }, 500);
 });
 
 export default {
-  fetch: app.fetch,
-  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+  async fetch(request: Request, bindings: DatabaseBindings, ctx: ExecutionContext) {
+    if (bindings.DATABASE_MIGRATION_LOCK === '1' && new URL(request.url).pathname.startsWith('/api/') && !['/api/health','/api/config','/api/plans'].includes(new URL(request.url).pathname)) return Response.json({error:'Estamos migrando la base de datos. Vuelve a intentarlo en unos minutos.'},{status:503,headers:{'Retry-After':'60','Cache-Control':'no-store'}});
+    return withDatabase(bindings, async env => app.fetch(request, env, ctx), ctx);
+  },
+  async scheduled(controller: ScheduledController, bindings: DatabaseBindings, ctx: ExecutionContext) {
+    if (bindings.DATABASE_MIGRATION_LOCK === '1') return;
+    return withDatabase(bindings, async env => {
     const time = new Date(controller.scheduledTime);
     // One Cron binding for the entire MVP; the account's Free limit is shared.
     const daily = time.getUTCHours() === 3 && time.getUTCMinutes() === 17;
     // Reuse the minute trigger; unfinished bounded deletes continue every 15 min.
     const continuation=(time.getUTCMinutes()+13)%15===0;
-    ctx.waitUntil(controller.cron === '17 3 * * *' ? runRetentionJob(env,true) : Promise.all([schedule(env), ...(daily||continuation ? [runRetentionJob(env,daily)] : [])]));
+    await (controller.cron === '17 3 * * *' ? runRetentionJob(env,true) : Promise.all([schedule(env), ...(daily||continuation ? [runRetentionJob(env,daily)] : [])]));
+    }, ctx);
   },
-  async queue(batch: MessageBatch<QueuePayload>, env: Env) {
+  async queue(batch: MessageBatch<QueuePayload>, bindings: DatabaseBindings, ctx: ExecutionContext) {
+    if (bindings.DATABASE_MIGRATION_LOCK === '1') { batch.retryAll({delaySeconds:60}); return; }
+    return withDatabase(bindings, async env => {
     for (const message of batch.messages) {
       try { await consume(message.body, env); message.ack(); }
       catch { console.error(JSON.stringify({ event: 'queue_retry', attempts: message.attempts })); message.retry({ delaySeconds: 60 }); }
     }
+    }, ctx);
   },
-} satisfies ExportedHandler<Env, QueuePayload>;
+} satisfies ExportedHandler<DatabaseBindings, QueuePayload>;

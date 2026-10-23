@@ -12,5 +12,7 @@ coverage/
 artifacts/
 # Original product notes and Word's temporary owner file are not application source.
 Idea C.docx
+Comparativa.docx
+Posible migración BBDD.docx
 ~$*.docx
 Nuevo Documento de texto.txt

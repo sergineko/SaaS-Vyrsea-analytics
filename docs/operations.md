@@ -1,5 +1,7 @@
 # Seguridad y operación de Vyrsea
 
+Producción utiliza PostgreSQL desde el 23-10-2026. Para conexión, migraciones y recuperación usa [la guía de Supabase e Hyperdrive](postgresql.md). Los comandos D1 de esta guía se conservan para la copia anterior y el entorno local; no administran la base de producción actual.
+
 ## Acceso supervisado
 
 El registro está sujeto a aprobación manual. Las cuentas Free se suspenden tras más de 14 días sin uso, con una hora de margen por la agrupación de escrituras de actividad. La suspensión detiene las sondas y requiere revisión para reactivar. El propietario y los planes de pago están exentos. Consulta [estados, controles y cuenta Business del propietario](account-access.md).

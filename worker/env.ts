@@ -1,7 +1,13 @@
 export interface CheckJob { monitorId: string; slot: number }
 export interface QueuePayload { jobs: CheckJob[] }
 export interface Env {
-  DB: D1Database;
+  DB: import('./database').Database;
+  HYPERDRIVE?: Hyperdrive;
+  DATABASE_URL?: string;
+  DATABASE_CA?: string;
+  DATABASE_PROVIDER?: 'd1' | 'supabase';
+  DATABASE_SCHEMA?: string;
+  DATABASE_MIGRATION_LOCK?: string;
   CHECK_QUEUE: Queue<QueuePayload>;
   ASSETS: Fetcher;
   APP_ORIGIN: string;

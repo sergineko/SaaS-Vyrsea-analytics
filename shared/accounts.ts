@@ -10,4 +10,5 @@ export interface OwnerAccountsData {
   usage: { monitors: number; monitorLimit: number; queuedChecks: number; activeAccounts: number; accountLimit: number };
   capacity?: ReturnType<typeof import('./capacity').estimateCapacity>;
   inactivityDays: number;
+  databaseProvider?:'d1'|'supabase';
 }

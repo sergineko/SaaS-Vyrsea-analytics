@@ -17,6 +17,19 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: vyrsea_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: local_test_only
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vyrsea_test"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      VYRSEA_POSTGRES_TEST_URL: postgresql://postgres:local_test_only@127.0.0.1:5432/vyrsea_test
     steps:
       - uses: actions/checkout@v7.0.1
         with:
