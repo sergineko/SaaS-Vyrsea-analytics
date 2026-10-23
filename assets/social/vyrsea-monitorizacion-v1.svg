@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+ <rect width="1200" height="630" fill="#172c40"/>
+ <path d="M0 594H1200" stroke="#30495d"/>
+ <g font-family="Segoe UI,Arial,sans-serif">
+  <rect x="60" y="56" width="54" height="54" rx="15" fill="#294355"/>
+  <path d="M69 84h9l5-13 8 26 5-13h10" fill="none" stroke="#9ad8c2" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5"/>
+  <text x="128" y="96" fill="#fff" font-size="40" font-weight="700" letter-spacing="-1.4">Vyrsea</text>
+  <text x="62" y="184" fill="#a8c3ce" font-size="15" font-weight="600" letter-spacing="2.5">MONITORIZACIÓN WEB</text>
+  <text x="58" y="269" fill="#fff" font-size="52" font-weight="700" letter-spacing="-1.8">La web de tu negocio.</text>
+  <text x="58" y="337" fill="#9ad8c2" font-size="52" font-weight="700" letter-spacing="-1.8">Siempre en el radar.</text>
+  <text x="61" y="395" fill="#c0ced9" font-size="23">Dominios, subdominios e incidencias.</text>
+  <text x="61" y="430" fill="#c0ced9" font-size="23">Todo en un mismo panel.</text>
+  <rect x="60" y="483" width="460" height="48" rx="8" fill="#294355"/>
+  <circle cx="83" cy="507" r="5" fill="#9ad8c2"/>
+  <text x="101" y="515" fill="#fff" font-size="21" font-weight="600">1 dominio · 2 monitores gratuitos</text>
+  <text x="61" y="578" fill="#dce6ed" font-size="19">vyrsea.com</text>
+  <rect x="737" y="167" width="405" height="329" rx="15" fill="#0d1f2e"/>
+  <rect x="729" y="158" width="405" height="329" rx="15" fill="#f5f7fa"/>
+  <text x="754" y="198" fill="#172c40" font-size="22" font-weight="700">Tu dominio</text>
+  <text x="754" y="225" fill="#637487" font-size="14">2 monitores · Últimas 24 horas</text>
+  <path d="M754 246H1109" stroke="#dfe5eb"/>
+  <text x="754" y="281" fill="#172c40" font-size="17" font-weight="600">Web principal</text>
+  <circle cx="1037" cy="275" r="4" fill="#187356"/>
+  <text x="1048" y="280" fill="#187356" font-size="12" font-weight="600">Operativo</text>
+  <text x="754" y="305" fill="#637487" font-size="13">www.tunegocio.com</text>
+  <g fill="#519e89">
+   <path d="M754 324h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z"/>
+  </g>
+  <text x="754" y="383" fill="#172c40" font-size="17" font-weight="600">API y servicios</text>
+  <circle cx="1037" cy="377" r="4" fill="#187356"/>
+  <text x="1048" y="382" fill="#187356" font-size="12" font-weight="600">Operativo</text>
+  <text x="754" y="407" fill="#637487" font-size="13">api.tunegocio.com</text>
+  <g fill="#519e89">
+   <path d="M754 426h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z m15 0h11v17h-11z"/>
+  </g>
+  <text x="931" y="514" fill="#a8c3ce" font-size="12" text-anchor="middle">Panel de ejemplo · Datos simulados</text>
+ </g>
+</svg>
