@@ -33,7 +33,7 @@ app.use('/api/*', async (c, next) => {
 app.get('/api/health', async c => {
   const postgres=c.env.DATABASE_PROVIDER==='supabase';
   if(postgres)await c.env.DB.prepare('SELECT 1 AS ready').first();
-  return c.json({ok:true,service:'vyrsea',version:'0.4.0',database:postgres?'supabase':'d1'});
+  return c.json({ok:true,service:'vyrsea',version:'0.4.1',database:postgres?'supabase':'d1'});
 });
 app.get('/api/config', c => c.json({ turnstileSiteKey: c.env.TURNSTILE_SITE_KEY ?? '',
   registrationMode: 'approval', freeInactivityDays: 14,
@@ -60,6 +60,8 @@ app.onError((error, c) => {
   if (/DUPLICATE_MONITOR/.test(detail)) return c.json({ error: 'Ya tienes un monitor para esta URL.' }, 409);
   if (/CREDENTIAL_CAPACITY/.test(detail)) return c.json({ error: 'Ya tienes cinco passkeys. Puedes recuperar el acceso con un código para sustituirlas.' }, 409);
   if (/STATUS_PAGE_CAPACITY/.test(detail)) return c.json({error:'La beta permite cinco páginas de estado por cuenta.'},409);
+  if (/TEAM_CAPACITY/.test(detail)) return c.json({error:'El equipo y las invitaciones superan el límite del plan: Pro / Agencia admite 3 usuarios; Free y Starter, 1. El titular cuenta. Retira un acceso o cancela una invitación antes de continuar.'},409);
+  if (/TEAM_PLAN_REQUIRED/.test(detail)) return c.json({error:'Retira los miembros y cancela las invitaciones antes de cambiar a un plan sin equipo.'},409);
   if (/GLOBAL_CAPACITY/.test(detail)) return c.json({ error: 'La beta ha alcanzado sus 10 monitores de clientes compartidos. Este límite técnico se aplica además de las cuotas de cada plan.' }, 409);
   if (/CUSTOM_PLAN_REQUIRED/.test(detail)) return c.json({ error: 'El plan Business necesita cuotas personalizadas configuradas por contrato.' }, 409);
   if (/MAINTENANCE_OVERLAP/.test(detail)) return c.json({ error: 'Este horario coincide con otro mantenimiento del monitor.' }, 409);

@@ -17,6 +17,7 @@ import {availabilityStatsSQL,dashboardStatistics} from './statistics';
 import {team,workspaceContext,auditStatement} from './team';
 import {auditedDatabase} from './audit';
 import {alerts} from './alerts';
+import {subscriptionSeats} from './seats';
 
 export const api = new Hono<AppEnv>();
 api.use('*', async (c, next) => {
@@ -32,6 +33,10 @@ api.use('*', async (c, next) => {
   await next();
 });
 api.route('/',team);
+api.get('/subscription',async c=>{
+  if(!['owner','admin'].includes(c.get('workspaceRole')))throw new HTTPException(403,{message:'La suscripción requiere administración del espacio.'});
+  return c.json({subscription:await subscriptionSeats(c.env,c.get('user').id),billingEnabled:false});
+});
 api.route('/alerts',alerts);
 const monitorInput = z.object({ name: z.string().trim().min(1).max(60), url: z.string().max(2048) }).strict();
 const monitorColumns = `id,user_id AS userId,name,url,root_domain AS rootDomain,paused,status,failures,

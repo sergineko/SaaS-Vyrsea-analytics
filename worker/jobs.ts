@@ -64,6 +64,7 @@ export async function schedule(env: Env, timestamp = nowSeconds()) {
 }
 
 export async function recordResult(env: Env, job: CheckJob, result: ProbeResult, timestamp = nowSeconds()) {
+  if(env.DB.recordCheckResult){await env.DB.recordCheckResult(job.monitorId,job.slot,timestamp,result);return;}
   const id = `${job.monitorId}:${job.slot}`;
   const hour = Math.floor(timestamp / 3600) * 3600;
   const outsideMaintenance = `AND ${accountEligible(timestamp)} AND ${slotEligible(job.slot)} AND NOT EXISTS(SELECT 1 FROM maintenance_windows w WHERE w.monitor_id=monitors.id

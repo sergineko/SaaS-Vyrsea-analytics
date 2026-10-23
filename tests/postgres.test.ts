@@ -92,6 +92,28 @@ describe.skipIf(!connection).sequential('PostgreSQL 17: real Worker, transaction
     expect((await db.prepare('SELECT count(*) AS n FROM checks WHERE monitor_id=?').bind(monitor).first<{n:number}>())!.n).toBe(1);
     expect((await db.prepare('SELECT sum(total) AS n FROM hourly_stats WHERE monitor_id=?').bind(monitor).first<{n:number}>())!.n).toBe(1);
   });
+  it('stores a result with one network statement and rejects a suspended account even after a probe has started',async()=>{
+    const id=randomUUID();await db.prepare('INSERT INTO monitors(id,user_id,name,url,root_domain,next_check_at,created_at) VALUES(?,?,?,?,?,0,?)').bind(id,owner,'One statement','https://single.example.org/','example.org',now()).run();
+    const queries:string[]=[],previous=sql.options.debug;sql.options.debug=(_connection,query)=>{queries.push(query);};
+    try{await db.recordCheckResult(id,now(),now(),{ok:true,statusCode:200,responseMs:12,error:null});}finally{sql.options.debug=previous;}
+    expect(queries).toHaveLength(1);expect(queries[0]).toContain('record_monitor_result');
+    const user=randomUUID(),blocked=randomUUID();await db.prepare("INSERT INTO users(id,username,created_at,plan_id,account_status,last_active_at) VALUES(?,?,?,'pro','active',?)").bind(user,user,now(),now()).run();
+    await db.prepare('INSERT INTO monitors(id,user_id,name,url,root_domain,next_check_at,created_at) VALUES(?,?,?,?,?,0,?)').bind(blocked,user,'Suspended in flight','https://blocked.example.org/','example.org',now()).run();
+    await db.prepare("UPDATE users SET account_status='suspended' WHERE id=?").bind(user).run();
+    await db.recordCheckResult(blocked,now(),now(),{ok:true,statusCode:200,responseMs:12,error:null});
+    expect((await db.prepare('SELECT count(*) AS n FROM checks WHERE monitor_id=?').bind(blocked).first<{n:number}>())!.n).toBe(0);
+  });
+  it('enforces the Pro three-seat ceiling across concurrent reservations, acceptance and plan reductions',async()=>{
+    const user=randomUUID();await db.prepare("INSERT INTO users(id,username,created_at,plan_id,account_status,last_active_at) VALUES(?,?,?,'pro','active',?)").bind(user,user,now(),now()).run();
+    const targets=[owner,other];
+    const extra=randomUUID();await db.prepare("INSERT INTO users(id,username,created_at,account_status,last_active_at) VALUES(?,?,?,'active',?)").bind(extra,extra,now(),now()).run();targets.push(extra);
+    const invites=await Promise.allSettled(targets.map((target,index)=>db.prepare("INSERT INTO team_invitations(id,workspace_id,user_id,role,token_hash,expires_at) VALUES(?,?,?,'reader',?,?)").bind(randomUUID(),user,target,'pg-seat-'+user+index,now()+3600).run()));
+    expect(invites.filter(r=>r.status==='fulfilled')).toHaveLength(2);
+    await expect(db.prepare("UPDATE users SET plan_id='starter' WHERE id=?").bind(user).run()).rejects.toThrow('TEAM_CAPACITY');
+    const invitation=await db.prepare('SELECT user_id FROM team_invitations WHERE workspace_id=? LIMIT 1').bind(user).first<{user_id:string}>();
+    await db.prepare("INSERT INTO team_members(workspace_id,user_id,role,created_at) VALUES(?,?,'reader',?)").bind(user,invitation!.user_id,now()).run();
+    expect((await db.prepare('SELECT count(*) AS n FROM team_members WHERE workspace_id=?').bind(user).first<{n:number}>())!.n).toBe(1);
+  });
   it('opens one incident after two failures and records its recovery exactly once',async()=>{
     const slot=now();expect((await result(slot+60,false)).status).toBe(200);expect((await result(slot+120,false)).status).toBe(200);
     expect((await db.prepare('SELECT status FROM monitors WHERE id=?').bind(monitor).first<{status:string}>())!.status).toBe('down');

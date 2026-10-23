@@ -11,7 +11,7 @@ export async function accountPlan(env: Env, userId: string): Promise<PlanLimits>
   const definition = PLAN_CATALOG.find(item => item.id === plan?.id);
   if (!plan || !definition || (!plan.owner && (!plan.domains || !plan.monitors)) || !plan.historyDays) throw new Error('Missing account plan or custom contract limits');
   const {owner,...limits}=plan;
-  return { ...limits, ...(owner ? {name:'Business · propietario',domains:null,monitors:null} : {}), advancedDashboard: definition.advancedDashboard, multiProbe: definition.multiProbe };
+  return { ...limits, ...(owner ? {name:'Business',domains:null,monitors:null} : {}), advancedDashboard: definition.advancedDashboard, multiProbe: definition.multiProbe };
 }
 
 export async function backfillDomains(env: Env, userId: string) {

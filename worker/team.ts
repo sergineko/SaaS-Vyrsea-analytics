@@ -5,6 +5,7 @@ import type {AppEnv,User} from './env';
 import {nowSeconds} from './env';
 import {digest,randomToken} from './security';
 import {accountPlan} from './plans';
+import {subscriptionSeats} from './seats';
 
 export const roleSchema=z.enum(['admin','operator','reader']);
 export function auditStatement(c:Context<AppEnv>,action:string,resource:string,database=c.env.DB){
@@ -18,9 +19,9 @@ export async function workspaceContext(c:Context<AppEnv>,actor:User){
   if(!id||id===actor.id)return;
   const row=await c.env.DB.prepare(`SELECT u.id,u.username,u.created_at AS createdAt,u.account_status AS accountStatus,
     u.plan_id AS planId,u.last_active_at AS lastActiveAt,t.role FROM team_members t JOIN users u ON u.id=t.workspace_id
-    WHERE t.workspace_id=? AND t.user_id=? AND u.account_status='active' AND (u.plan_id='business' OR u.is_owner=1)`)
+    WHERE t.workspace_id=? AND t.user_id=? AND u.account_status='active' AND (u.plan_id IN ('pro','business') OR u.is_owner=1)`)
     .bind(id,actor.id).first<User&{role:'admin'|'operator'|'reader'}>();
-  if(!row)throw new HTTPException(403,{message:'Ya no tienes acceso a este espacio Business.'});
+  if(!row)throw new HTTPException(403,{message:'Ya no tienes acceso a este espacio.'});
   c.set('user',{...row,isOwner:false});c.set('workspaceRole',row.role);
   if(['GET','HEAD'].includes(c.req.method))return;
   if(row.role==='reader')throw new HTTPException(403,{message:'Tu rol de lector solo permite consultar.'});
@@ -33,13 +34,13 @@ export const team=new Hono<AppEnv>();
 team.get('/workspaces',async c=>{
   const actor=c.get('actor')??c.get('user');
   const rows=await c.env.DB.prepare(`SELECT u.id,u.username,t.role FROM team_members t JOIN users u ON u.id=t.workspace_id
-    WHERE t.user_id=? AND u.account_status='active' AND (u.plan_id='business' OR u.is_owner=1) ORDER BY u.username LIMIT 100`).bind(actor.id).all();
+    WHERE t.user_id=? AND u.account_status='active' AND (u.plan_id IN ('pro','business') OR u.is_owner=1) ORDER BY u.username LIMIT 100`).bind(actor.id).all();
   return c.json({own:{id:actor.id,username:actor.username,role:'owner'},shared:rows.results,current:c.get('user').id,role:c.get('workspaceRole')});
 });
 team.post('/team/accept',async c=>{
   const actor=c.get('actor')??c.get('user'),{token}=z.object({token:z.string().min(30).max(100)}).strict().parse(await c.req.json()),now=nowSeconds();
   const row=await c.env.DB.prepare(`SELECT i.* FROM team_invitations i JOIN users u ON u.id=i.workspace_id
-    WHERE i.token_hash=? AND i.user_id=? AND i.claimed_at IS NULL AND i.expires_at>? AND u.account_status='active' AND (u.plan_id='business' OR u.is_owner=1)`)
+    WHERE i.token_hash=? AND i.user_id=? AND i.claimed_at IS NULL AND i.expires_at>? AND u.account_status='active' AND (u.plan_id IN ('pro','business') OR u.is_owner=1)`)
     .bind(await digest(token),actor.id,now).first<{id:string;workspace_id:string;role:string}>();
   if(!row)throw new HTTPException(409,{message:'La invitación ha caducado, ya se utilizó o pertenece a otro usuario.'});
   const results=await c.env.DB.batch([
@@ -53,7 +54,7 @@ team.post('/team/accept',async c=>{
   return c.json({ok:true,workspaceId:row.workspace_id});
 });
 team.use('/team/*',async(c,next)=>{
-  if((await accountPlan(c.env,c.get('user').id)).id!=='business')throw new HTTPException(403,{message:'El equipo requiere Business.'});
+  if(!(await accountPlan(c.env,c.get('user').id)).advancedDashboard)throw new HTTPException(403,{message:'El equipo requiere Pro / Agencia o Business.'});
   if(!['owner','admin'].includes(c.get('workspaceRole')))throw new HTTPException(403,{message:'La administración del equipo requiere el rol administrador.'});
   await next();
 });
@@ -64,7 +65,7 @@ team.get('/team/members',async c=>{
     c.env.DB.prepare('SELECT i.id,u.username,i.role,i.expires_at AS expiresAt FROM team_invitations i JOIN users u ON u.id=i.user_id WHERE i.workspace_id=? AND i.claimed_at IS NULL AND i.expires_at>? LIMIT 100').bind(id,nowSeconds()),
     c.env.DB.prepare('SELECT actor_name AS actor,action,resource,created_at AS createdAt FROM audit_events WHERE workspace_id=? ORDER BY created_at DESC LIMIT 100').bind(id),
   ]);
-  return c.json({members:members.results,invitations:invitations.results,audit:audit.results,role:c.get('workspaceRole')});
+  return c.json({members:members.results,invitations:invitations.results,audit:audit.results,role:c.get('workspaceRole'),subscription:await subscriptionSeats(c.env,id),holder:c.get('user').username});
 });
 team.post('/team/invitations',async c=>{
   const value=z.object({username:z.string().trim().min(3).max(60),role:roleSchema}).strict().parse(await c.req.json());
@@ -82,6 +83,10 @@ team.patch('/team/members/:id',async c=>{
   const result=await c.env.DB.batch([c.env.DB.prepare('UPDATE team_members SET role=? WHERE workspace_id=? AND user_id=?').bind(role,c.get('user').id,c.req.param('id')),
     c.env.DB.prepare('DELETE FROM team_invitations WHERE workspace_id=? AND user_id=? AND claimed_at IS NULL').bind(c.get('user').id,c.req.param('id')),auditStatement(c,'team.role.'+role,c.req.param('id'))]);
   if(!result[0].meta.changes)throw new HTTPException(404,{message:'Miembro no encontrado.'});return c.json({ok:true});
+});
+team.delete('/team/invitations/:id',async c=>{
+  await c.env.DB.batch([c.env.DB.prepare('DELETE FROM team_invitations WHERE id=? AND workspace_id=? AND claimed_at IS NULL').bind(c.req.param('id'),c.get('user').id),auditStatement(c,'team.invitation.cancel',c.req.param('id'))]);
+  return c.json({ok:true});
 });
 team.delete('/team/members/:id',async c=>{
   const id=c.req.param('id');await c.env.DB.batch([c.env.DB.prepare('DELETE FROM team_members WHERE workspace_id=? AND user_id=?').bind(c.get('user').id,id),

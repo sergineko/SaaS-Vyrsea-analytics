@@ -16,6 +16,7 @@ export interface Database {
   prepare(query: string): DatabaseStatement;
   batch<T = Record<string, unknown>>(statements: DatabaseStatement[]): Promise<DatabaseResult<T>[]>;
   monitorBatch?<T = Record<string, unknown>>(statements:DatabaseStatement[],monitorIds:string[]):Promise<DatabaseResult<T>[]>;
+  recordCheckResult?(monitorId:string,slot:number,timestamp:number,result:{ok:boolean;statusCode:number|null;responseMs:number;error:string|null}):Promise<void>;
 }
 export function monitorBatch<T = Record<string,unknown>>(database:Database,statements:DatabaseStatement[],monitorIds:string[]){
   return database.monitorBatch?database.monitorBatch<T>(statements,monitorIds):database.batch<T>(statements);
@@ -105,7 +106,12 @@ class Statement implements DatabaseStatement {
 }
 
 export class PostgresDatabase implements Database {
-  constructor(readonly client: Client, readonly schema = 'vyrsea') {}
+  constructor(readonly client: Client, readonly schema = 'vyrsea') {if(!/^[a-z][a-z0-9_]{0,62}$/.test(schema))throw new Error('Invalid database schema');}
+  async recordCheckResult(monitorId:string,slot:number,timestamp:number,result:{ok:boolean;statusCode:number|null;responseMs:number;error:string|null}){
+    for(let attempt=0;;attempt++)try{
+      await this.client.unsafe(`SELECT "${this.schema}".record_monitor_result($1::text,$2::bigint,$3::bigint,$4::bigint,$5::bigint,$6::double precision,$7::text)`,[monitorId,slot,timestamp,result.ok?1:0,result.statusCode,result.responseMs,result.error],{prepare:true});return;
+    }catch(error){if(attempt>=4||!['40001','40P01'].includes((error as {code?:string}).code??''))throw error;await new Promise(resolve=>setTimeout(resolve,10*2**attempt));}
+  }
   prepare(query: string) { return new Statement(this, query); }
   async batch<T = Record<string, unknown>>(statements: DatabaseStatement[]): Promise<DatabaseResult<T>[]> {return this.executeBatch<T>(statements);}
   async monitorBatch<T = Record<string,unknown>>(statements:DatabaseStatement[],monitorIds:string[]){return this.executeBatch<T>(statements,[...new Set(monitorIds)].sort());}
@@ -131,7 +137,10 @@ export class PostgresDatabase implements Database {
     // One SQL write is already atomic. Security/quota batches retain SERIALIZABLE.
     // The hot monitoring path uses explicit account/monitor row locks instead of
     // SSI predicate locks, avoiding false conflicts between unrelated monitors.
-    const quotaInsert=prepared.some(statement=>/^\s*INSERT\s+INTO\s+"[^"]+"\.(users|monitors|credentials|maintenance_windows|status_pages)\b/i.test(statement.sql));
+    const quotaInsert=prepared.some(statement=>/^\s*INSERT\s+INTO\s+"[^"]+"\.(users|monitors|credentials|maintenance_windows|status_pages|team_members|team_invitations)\b/i.test(statement.sql));
+    // PostgreSQL already gives a standalone statement an atomic transaction.
+    // Avoid two extra network statements for each simple outbox update/delete.
+    if(prepared.length===1&&!monitorIds&&!quotaInsert)return run(this.client);
     const isolation=monitorIds||prepared.length===1&&!quotaInsert?'read committed':'serializable';
     for (let attempt = 0; ; attempt++) {
       try { return await this.client.begin('isolation level '+isolation, async transaction => {

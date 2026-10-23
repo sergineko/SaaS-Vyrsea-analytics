@@ -34,15 +34,25 @@ Al activar hostnames propios, `assets.run_worker_first` debe ser `true` para que
 
 Un dominio activo debe desvincularse y retirar su certificado antes de eliminar la página. La operación no borra sus monitores. Las configuraciones preparadas sin proveedor se eliminan con la página.
 
-## Equipo Business y auditoría
+## Equipo Pro / Agencia y Business; auditoría
 
 Cada persona utiliza su cuenta y passkeys existentes. Un administrador invita a una cuenta activa registrada; el enlace está vinculado a ese usuario, caduca en siete días y se consume una vez. No se envía automáticamente a terceros. Los roles:
 
-- Administrador: monitores, páginas, destinos y miembros del espacio. No obtiene el rol de propietario de Vyrsea ni modifica planes comerciales.
+- Administrador: monitores, páginas, destinos y miembros de la organización.
 - Operador: consultas, pausa/comprobación de monitores, mantenimientos y comunicados de incidencias. No borra monitores ni administra equipo o canales.
 - Lector: solo consulta. No escribe ni publica.
 
-El selector lateral elige entre el espacio personal y los compartidos. `X-Vyrsea-Workspace` es una preferencia: el servidor vuelve a verificar membresía, estado Business y rol en cada solicitud. Las rutas de autenticación, seguridad personal y propietario siguen usando la identidad de la sesión. Revocar acceso bloquea las nuevas solicitudes. El equipo reutiliza cuentas registradas; no crea otras ni amplía el máximo global de cien cuentas de la beta. Los cambios de rol invalidan invitaciones pendientes del mismo miembro.
+El selector lateral elige entre el espacio personal y los compartidos. `X-Vyrsea-Workspace` es una preferencia: el servidor vuelve a verificar membresía, plan Pro/Business y rol en cada solicitud. Las rutas de autenticación, seguridad personal y administración global siguen usando la identidad de la sesión. Revocar acceso bloquea las nuevas solicitudes. El equipo reutiliza cuentas registradas; no crea otras ni amplía el máximo global de cien cuentas de la beta. Los cambios de rol invalidan invitaciones pendientes del mismo miembro.
+
+Pro / Agencia incluye un usuario por 29,99 €/mes; dos usuarios cuestan 39,99 € y tres, 49,99 €. El límite de tres incluye al titular. Las invitaciones válidas reservan plaza y pueden cancelarse. Los triggers de PostgreSQL y SQLite impiden superar el límite mediante peticiones simultáneas y bloquean una reducción de plan incompatible con el equipo existente.
+
+Business incluye un usuario en la base personalizada. `business_contracts.seat_price_cents` define el precio mensual de cada usuario adicional por contrato: 1.500 céntimos por defecto, editable en Admin Propietario, incluido cero para acuerdos específicos. La base corresponde al ciclo acordado; los adicionales de un contrato anual incluyen doce mensualidades. Los miembros aceptados ocupan plaza hasta retirar su acceso; las invitaciones pendientes no forman parte del importe. Los importes son referencias, sin cobros, prorrateos ni sincronización con Dodo mientras la contratación siga desactivada.
+
+## Reducción de consultas de Hyperdrive
+
+La función privada `record_monitor_result`, con privilegios del llamante, guarda cada resultado mediante una única consulta de red. Mantiene los bloqueos cuenta → monitor, la comprobación de cuenta/slot/mantenimiento, el histórico, agregados, incidencias, notificaciones y eliminación de la tarea en la misma transacción implícita. No concede permisos de administración ni expone el esquema mediante la API de Supabase. Las escrituras simples ya no envían BEGIN/COMMIT redundantes; los lotes con cuotas conservan transacciones SERIALIZABLE y reintentos.
+
+El ensayo PostgreSQL verifica una consulta de red por resultado frente a diez en el camino saludable anterior. Esta reducción no elimina el límite de 100.000 consultas/día de Hyperdrive Free, ni el trabajo interno de PostgreSQL. La métrica de Cloudflare sigue siendo la referencia para la instalación completa, que incluye lecturas de panel, autenticación y planificación. La caché de Hyperdrive permanece desactivada para evitar estados antiguos en permisos y monitorización.
 
 Los cambios en monitores, mantenimientos, páginas, comunicados, dominios y destinos guardan autor y recurso en la misma transacción que la modificación. No se genera auditoría por sonda o lectura. La administración de miembros tiene sus propios eventos. La limpieza aplica el histórico contratado a auditoría, entregas y comunicados resueltos; conserva comunicados abiertos y elimina invitaciones vencidas y recibos de correo de más de siete días en lotes acotados.
 

@@ -29,6 +29,26 @@ beforeEach(async()=>{
 });
 afterAll(async()=>{await mf?.dispose();});
 describe.sequential('Commercial preparation without paid activation',()=>{
+ it('offers Pro teams, reserves at most three seats and frees cancelled invitations without billing pending users',async()=>{
+   await db.prepare("UPDATE users SET plan_id='pro' WHERE id='member'").run();
+   await db.prepare("INSERT INTO users(id,username,created_at,account_status,last_active_at) VALUES('third','third',?,'active',?)").bind(now(),now()).run();
+   expect((await api('/team/members','GET',undefined,'member')).status).toBe(200);
+   const invitations=await Promise.all(['owner','other','third'].map(username=>api('/team/invitations','POST',{username,role:'reader'},'member')));
+   expect(invitations.map(r=>r.status).sort()).toEqual([201,201,409]);
+   let data=await(await api('/team/members','GET',undefined,'member')).json() as {subscription:{users:number;pending:number;billing:{totalCents:number}};invitations:{id:string}[]};
+   expect(data.subscription).toMatchObject({users:1,pending:2,billing:{totalCents:2999}});
+   await api('/team/invitations/'+data.invitations[0].id,'DELETE',undefined,'member');
+   data=await(await api('/team/members','GET',undefined,'member')).json() as typeof data;expect(data.subscription.pending).toBe(1);
+   expect((await api('/owner/accounts/member/plan','PATCH',{planId:'starter'})).status).toBe(409);
+ });
+ it('stores a custom Business seat price, includes the titular user and keeps payments off',async()=>{
+   await db.prepare("UPDATE users SET plan_id='business' WHERE id='other'").run();
+   const value={company:'Empresa',contactEmail:'',priceCents:6900,seatPriceCents:800,billingCycle:'monthly',notes:''};
+   expect((await api('/owner/accounts/other/contract','PUT',value)).status).toBe(200);
+   await db.prepare("INSERT INTO team_members(workspace_id,user_id,role,created_at) VALUES('other','member','reader',?)").bind(now()).run();
+   const response=await api('/subscription','GET',undefined,'other');expect(response.status).toBe(200);
+   expect(await response.json()).toMatchObject({billingEnabled:false,subscription:{users:2,billing:{baseCents:6900,unitCents:800,seatCents:800,totalCents:7700}}});
+ });
  it('rolls back a product change when its author audit cannot be saved',async()=>{
    await db.prepare("CREATE TRIGGER audit_fixture_failure BEFORE INSERT ON audit_events BEGIN SELECT RAISE(ABORT,'SYNTHETIC_AUDIT_FAILURE'); END").run();
    try{expect((await api('/monitors/'+monitor,'PATCH',{name:'Must roll back'})).status).toBe(500);expect((await db.prepare('SELECT name FROM monitors WHERE id=?').bind(monitor).first())!.name).toBe('API privada');}
