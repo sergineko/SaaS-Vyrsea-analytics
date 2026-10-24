@@ -12,6 +12,7 @@ import { estimateCapacity } from '../shared/capacity';
 import { infrastructure } from './infrastructure';
 import { retentionStatus } from './retention-job';
 import {business} from './business';
+import {usernameSchema} from './auth';
 
 export function denyInactive(c: Context<AppEnv>, user: User) {
   if (user.accountStatus !== 'active') return c.json({ code: user.accountStatus === 'pending' ? 'ACCOUNT_PENDING' : 'ACCOUNT_SUSPENDED',
@@ -56,6 +57,18 @@ owner.get('/infrastructure', async c => {
   return c.json({...data,retention});
 });
 owner.route('/',business);
+owner.patch('/accounts/:id/profile',async c=>{
+  const input=z.object({username:usernameSchema}).strict().parse(await c.req.json()),id=c.req.param('id');
+  if(!await c.env.DB.prepare('SELECT id FROM users WHERE id=?').bind(id).first())throw new HTTPException(404,{message:'Cuenta no encontrada.'});
+  const duplicate=await c.env.DB.prepare('SELECT id FROM users WHERE username=? AND id<>?').bind(input.username,id).first();
+  if(duplicate)throw new HTTPException(409,{message:'Ese nombre de usuario ya está ocupado.'});
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE users SET username=? WHERE id=?').bind(input.username,id),
+    c.env.DB.prepare('DELETE FROM challenges WHERE user_id=?').bind(id),
+    c.env.DB.prepare('DELETE FROM account_invitations WHERE user_id=? AND claimed_at IS NULL').bind(id),
+  ]);
+  return c.json({ok:true});
+});
 owner.get('/accounts', async c => {
   await expireInactiveAccounts(c.env);
   const [accounts, usage] = await c.env.DB.batch([

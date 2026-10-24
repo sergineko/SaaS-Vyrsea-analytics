@@ -20,6 +20,8 @@ import './workspace-upgrade.css';
 import {OverviewServices} from './OverviewServices';
 import {WorkspaceSwitcher} from './WorkspaceSwitcher';
 import './launch-features.css';
+import {useLiveDashboard} from './useLiveDashboard';
+import {mergeLiveDashboard} from '../shared/live-dashboard';
 
 const AdvancedWorkspace = lazy(() => import('./AdvancedWorkspace').then(module => ({default:module.AdvancedWorkspace})));
 const OwnerAccounts = lazy(() => import('./OwnerAccounts').then(module => ({ default: module.OwnerAccounts })));
@@ -33,7 +35,9 @@ const tabs: { id: Tab; name: string; icon: typeof Activity }[] = [
 ];
 export function Dashboard({ demo, demoMode = 'free', onDemoChange, user, onExit, onRegister }: { demo: boolean; demoMode?: DemoMode; onDemoChange: (mode: DemoMode) => void; user: User | null; onExit: () => Promise<void>; onRegister: () => void }) {
   const [data,setData]=useState<DashboardData|null>(()=>demo?demoData(demoMode==='free'?1:7,demoMode):null),[tab,setTab]=useState<Tab>(demo&&demoMode!=='free'?'advanced':'overview');
-  const refreshSequence=useRef(0),historySequence=useRef(0);
+  const refreshSequence=useRef(0),historySequence=useRef(0),fullRunning=useRef(false),dataRef=useRef(data),historyStamp=useRef(''),fullFetchedAt=useRef(Date.now());
+  dataRef.current=data;
+  const [liveCheckedAt,setLiveCheckedAt]=useState(0);
   const [historyFilter,setHistoryFilter]=useState<HistoryResult>('all'),[maintenanceMonitor,setMaintenanceMonitor]=useState('');
   const [windowDays,setWindowDays]=useState(demo&&demoMode!=='free'?7:1);
   const [historyMore,setHistoryMore]=useState(false),[loadingHistory,setLoadingHistory]=useState(false);
@@ -41,8 +45,21 @@ export function Dashboard({ demo, demoMode = 'free', onDemoChange, user, onExit,
   const [modal,setModal]=useState<'new'|'help'|'maintenance'|null>(null),[detail,setDetail]=useState<Monitor|null>(null),[history,setHistory]=useState<CheckResult[]>([]);
   const [toast,setToast]=useState(''),[error,setError]=useState(''),[refreshing,setRefreshing]=useState(false),[mobileNav,setMobileNav]=useState(false),[busyId,setBusyId]=useState('');
   const requestedDays=tab==='overview'||tab==='settings'||tab==='owner'?1:windowDays;
-  async function refresh(){const sequence=++refreshSequence.current;setRefreshing(true);try{const next=demo?demoData(requestedDays,demoMode):await request<DashboardData>(`/dashboard?days=${requestedDays}${tab==='advanced'?'&view=advanced':''}`);if(sequence===refreshSequence.current){setData(next);setError('');}}catch(e){if(sequence===refreshSequence.current)setError((e as Error).message);}finally{if(sequence===refreshSequence.current)setRefreshing(false);}}
-  useEffect(()=>{refresh();const timer=setInterval(()=>{if(!document.hidden&&tab!=='settings'&&tab!=='owner')refresh();},60000);return()=>clearInterval(timer);},[demo,demoMode,requestedDays,tab==='advanced',tab==='settings',tab==='owner']);
+  async function refresh(){const sequence=++refreshSequence.current;fullRunning.current=true;setRefreshing(true);try{const next=demo?demoData(requestedDays,demoMode):await request<DashboardData>(`/dashboard?days=${requestedDays}${tab==='advanced'?'&view=advanced':''}`);if(sequence===refreshSequence.current){fullFetchedAt.current=Date.now();dataRef.current=next;setData(next);setLiveCheckedAt(next.serverTime);setError('');}}catch(e){if(sequence===refreshSequence.current)setError((e as Error).message);}finally{if(sequence===refreshSequence.current){fullRunning.current=false;setRefreshing(false);}}}
+  useEffect(()=>{void refresh();},[demo,demoMode,requestedDays,tab==='advanced']);
+  useLiveDashboard({enabled:!demo&&Boolean(data)&&tab!=='owner',scope:(user?.id??'')+':'+(data?.workspace?.id??user?.id??''),workspaceId:data?.workspace?.id??user?.id??'',days:requestedDays,advanced:tab==='advanced',
+    onData:next=>{if(fullRunning.current)return;const base=dataRef.current;if(!base)return;const merged=mergeLiveDashboard(base,next);if(!merged){void refresh();return;}dataRef.current=merged;setData(merged);setError('');},
+    onChecked:at=>{setLiveCheckedAt(at);setError('');if(!fullRunning.current&&Date.now()-fullFetchedAt.current>=300000)void refresh();},onError:setError});
+  const detailCheckedAt=data?.monitors.find(m=>m.id===detail?.id)?.lastCheckedAt;
+  useEffect(()=>{
+    if(demo||!detail)return;const stamp=detail.id+':'+detailCheckedAt;
+    if(stamp===historyStamp.current)return;historyStamp.current=stamp;
+    const sequence=++historySequence.current;
+    request<CheckResult[]>(`/monitors/${detail.id}/history?result=${historyFilter}`).then(rows=>{
+      if(sequence!==historySequence.current)return;
+      setHistory(previous=>[...new Map([...previous,...rows].map(row=>[row.checkedAt,row])).values()].sort((a,b)=>b.checkedAt-a.checkedAt));
+    }).catch(()=>{/* A temporary failure keeps the loaded history; next result retries. */});
+  },[demo,detail?.id,detailCheckedAt,historyFilter]);
   useEffect(()=>registerAgentTools(workspaceTools(async signal=>{
     if(demo)return demoData(requestedDays,demoMode);
     const response=await fetch(`/api/dashboard?days=${requestedDays}`,{credentials:'same-origin',signal,headers:sessionStorage.getItem('vyrsea-workspace')?{'X-Vyrsea-Workspace':sessionStorage.getItem('vyrsea-workspace')!}:{} });
@@ -63,7 +80,7 @@ export function Dashboard({ demo, demoMode = 'free', onDemoChange, user, onExit,
   useEffect(()=>{if(!toast)return;const timer=setTimeout(()=>setToast(''),6000);return()=>clearTimeout(timer);},[toast]);
   async function action(monitor:Monitor,type:'pause'|'check'|'delete'){
     if(demo){setToast('Los datos de esta demo son de ejemplo. Crea tu cuenta para monitorizar servicios reales.');return;}setBusyId(monitor.id);
-    try{await request(`/monitors/${monitor.id}${type==='check'?'/check':''}`,type==='pause'?'PATCH':type==='delete'?'DELETE':'POST',type==='pause'?{paused:!monitor.paused}:{});setToast(type==='check'?'Comprobación en cola. Actualiza en unos segundos para consultar el resultado.':type==='delete'?'Monitor eliminado.':monitor.paused?'Monitor reanudado.':'Monitor en pausa.');if(type==='delete')setDetail(null);await refresh();}catch(e){setToast((e as Error).message);}finally{setBusyId('');}
+    try{await request(`/monitors/${monitor.id}${type==='check'?'/check':''}`,type==='pause'?'PATCH':type==='delete'?'DELETE':'POST',type==='pause'?{paused:!monitor.paused}:{});setToast(type==='check'?'Comprobación en cola. El resultado aparecerá automáticamente.':type==='delete'?'Monitor eliminado.':monitor.paused?'Monitor reanudado.':'Monitor en pausa.');if(type==='delete')setDetail(null);await refresh();}catch(e){setToast((e as Error).message);}finally{setBusyId('');}
   }
   async function loadHistory(monitor:Monitor,result:HistoryResult,before?:number){
     const sequence=++historySequence.current;setLoadingHistory(true);if(!before){setHistory([]);setHistoryMore(false);}
@@ -72,7 +89,7 @@ export function Dashboard({ demo, demoMode = 'free', onDemoChange, user, onExit,
     }catch(error){if(sequence===historySequence.current)setToast((error as Error).message);}finally{if(sequence===historySequence.current)setLoadingHistory(false);}
   }
   function closeDetail(){historySequence.current++;setDetail(null);setLoadingHistory(false);}
-  async function openDetail(monitor:Monitor){setDetail(monitor);setHistoryFilter('all');await loadHistory(monitor,'all');}
+  async function openDetail(monitor:Monitor){historyStamp.current=monitor.id+':'+monitor.lastCheckedAt;setDetail(monitor);setHistoryFilter('all');await loadHistory(monitor,'all');}
   async function loadMoreHistory(){if(detail&&history.length&&!loadingHistory)await loadHistory(detail,historyFilter,history.at(-1)!.checkedAt);}
   function changeHistoryFilter(result:HistoryResult){setHistoryFilter(result);if(detail)loadHistory(detail,result);}
   function openMaintenance(monitorId=''){closeDetail();setMaintenanceMonitor(monitorId);setModal('maintenance');}
@@ -106,7 +123,7 @@ export function Dashboard({ demo, demoMode = 'free', onDemoChange, user, onExit,
     {tab==='notifications'&&<section className="panel"><div className="panel-heading"><div><h2>Alertas de tus servicios</h2><p>Caídas y recuperaciones dentro del panel.</p></div><button className="button secondary" onClick={async()=>{if(demo){setToast('Las alertas de la demo son ejemplos.');return;}try{await request('/notifications/read','POST');await refresh();}catch(e){setToast((e as Error).message);}}}><CheckCheck size={15}/>Marcar leídas</button></div>{!data.notifications.length?<div className="empty-state"><Bell size={26}/><p>Sin notificaciones.</p></div>:data.notifications.map(n=><div className={`notification-row ${!n.readAt?'unread':''}`} key={n.id}><span className={`event-icon ${n.kind==='up'?'resolved':'open'}`}><Bell size={17}/></span><div><strong>{n.message}</strong><small>{dateTime(n.createdAt)}{!n.readAt?' · Sin leer':''}</small></div></div>)}</section>}
     {tab==='owner'&&!demo&&user?.isOwner&&<Suspense fallback={<div className="empty-state" role="status">Cargando cuentas…</div>}><OwnerAccounts/></Suspense>}
     {tab==='settings'&&<AccountSettings data={data}/>}
-    {tab==='advanced'&&limits.advancedDashboard&&(demo&&demoMode!=='free'?<Suspense fallback={<div className="empty-state" role="status">Abriendo la demo avanzada…</div>}><AdvancedDemo data={data} onSelect={openDetail}/></Suspense>:<Suspense fallback={<div className="empty-state" role="status">Abriendo la plataforma avanzada…</div>}><AdvancedWorkspace data={data} onSelect={openDetail}/></Suspense>)}<footer className="dashboard-footer"><span>Vyrsea · Monitorización HTTP</span><span>{demo?'Datos de ejemplo':`Actualizado ${relative(data.serverTime).toLowerCase()}`}</span></footer></>}
+    {tab==='advanced'&&limits.advancedDashboard&&(demo&&demoMode!=='free'?<Suspense fallback={<div className="empty-state" role="status">Abriendo la demo avanzada…</div>}><AdvancedDemo data={data} onSelect={openDetail}/></Suspense>:<Suspense fallback={<div className="empty-state" role="status">Abriendo la plataforma avanzada…</div>}><AdvancedWorkspace key={data.workspace?.id??user?.id} data={data} onSelect={openDetail}/></Suspense>)}<footer className="dashboard-footer"><span>Vyrsea · Monitorización HTTP</span><span>{demo?'Datos de ejemplo':`Actualización automática · comprobado ${relative(liveCheckedAt||data.serverTime).toLowerCase()}`}</span></footer></>}
     </main></div>{toast&&<div className="toast" role="status"><span>{toast}</span><button className="icon-button" aria-label="Cerrar aviso" onClick={()=>setToast('')}><X size={16}/></button></div>}
     {modal==='new'&&<NewMonitor demo={demo} limits={limits} monitors={monitors} onClose={()=>setModal(null)} onRegister={onRegister} onSaved={async()=>{setModal(null);setToast('Monitor creado. La primera sonda se iniciará en el próximo ciclo.');await refresh();}}/>}
     {modal==='maintenance'&&<MaintenanceModal monitors={monitors} initialMonitorId={maintenanceMonitor} demo={demo} onClose={()=>setModal(null)} onRegister={onRegister} onSaved={async()=>{setModal(null);setToast('Mantenimiento programado. Las sondas se reanudan automáticamente al terminar.');await refresh();}}/>}

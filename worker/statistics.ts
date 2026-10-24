@@ -11,7 +11,7 @@ export const dashboardStatsSQL=`SELECT h.monitor_id AS monitorId,?+CAST((h.hour-
   GROUP BY 1,2 ORDER BY hour`;
 
 export async function dashboardStatistics(env:Env,userId:string,monitorIds:string[],since:number,days:number,timestamp:number) {
-  if(!monitorIds.length)return {stats:[] as Statistic[],historyAsOf:timestamp};
+  if(!monitorIds.length)return {stats:[] as Statistic[],currentStats:[] as Statistic[],historyAsOf:timestamp};
   const hour=Math.floor(timestamp/3600)*3600,step=days*3600,ids=JSON.stringify([...monitorIds].sort());
   const query=(from:number,to:number)=>env.DB.prepare(dashboardStatsSQL)
     .bind(since,since,step,step,ids,from,to).all<Statistic>();
@@ -36,7 +36,7 @@ export async function dashboardStatistics(env:Env,userId:string,monitorIds:strin
     const id=`${row.monitorId}:${row.hour}`,old=buckets.get(id);
     if(old){old.total+=row.total;old.successful+=row.successful;old.totalMs+=row.totalMs;}else buckets.set(id,row);
   }
-  return {stats:[...buckets.values()].sort((a,b)=>a.hour-b.hour),historyAsOf:history.asOf};
+  return {stats:[...buckets.values()].sort((a,b)=>a.hour-b.hour),currentStats:current.results,historyAsOf:history.asOf};
 }
 
 // Two indexed ranges avoid reading weeks between a past custom interval and

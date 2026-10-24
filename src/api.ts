@@ -1,6 +1,6 @@
-export async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+export async function request<T>(path: string, method = 'GET', body?: unknown,signal?:AbortSignal): Promise<T> {
   const workspace=typeof sessionStorage!=='undefined'?sessionStorage.getItem('vyrsea-workspace'):null;
-  const response = await fetch(`/api${path}`, { method, credentials: 'same-origin',
+  const response = await fetch(`/api${path}`, { method, credentials: 'same-origin',signal,
     headers:{...(workspace?{'X-Vyrsea-Workspace':workspace}:{}),...(method!=='GET'?{'Content-Type':'application/json'}:{})},
     ...(method !== 'GET' ? { body: JSON.stringify(body ?? {}) } : {}),
   });

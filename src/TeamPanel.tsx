@@ -3,6 +3,7 @@ import {request} from './api';
 import {dateTime,Modal} from './ui';
 import {SeatBilling} from './SeatBilling';
 import type {SubscriptionSeats} from '../shared/seats';
+import {useVisibleRefresh} from './useVisibleRefresh';
 const roles={admin:'Administrador',operator:'Operador',reader:'Lector'} as const;
 type Role=keyof typeof roles;
 type Member={id:string;username:string;role:Role};
@@ -10,6 +11,7 @@ type Data={holder:string;subscription:SubscriptionSeats;members:Member[];invitat
 export function TeamPanel(){
  const [data,setData]=useState<Data|null>(null),[username,setUsername]=useState(''),[role,setRole]=useState<Role>('reader'),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[invitation,setInvitation]=useState(''),[remove,setRemove]=useState<Member|null>(null);
  async function load(){setData(await request<Data>('/team/members'));}
+ useVisibleRefresh(load,!busy&&!username&&!invitation&&!remove);
  useEffect(()=>{load().catch(e=>setMessage(e.message));},[]);
  async function act(fn:()=>Promise<unknown>){setBusy(true);setMessage('');try{await fn();await load();}catch(e){setMessage((e as Error).message);}finally{setBusy(false);}}
  const full=!!data&&data.subscription.maximum!==null&&data.subscription.users+data.subscription.pending>=data.subscription.maximum;

@@ -2,9 +2,11 @@ import {useEffect,useState} from 'react';
 import {ANNOUNCEMENT_STATES,type Announcement,type StatusComponent} from '../shared/status-components';
 import {request} from './api';
 import {dateTime} from './ui';
+import {useVisibleRefresh} from './useVisibleRefresh';
 export function StatusCommunications({pageId,components}:{pageId:string;components:StatusComponent[]}){
  const [rows,setRows]=useState<Announcement[]>([]),[title,setTitle]=useState(''),[severity,setSeverity]=useState('minor'),[state,setState]=useState<Announcement['state']>('investigating'),[affected,setAffected]=useState<string[]>([]),[message,setMessage]=useState(''),[published,setPublished]=useState(false),[selected,setSelected]=useState(''),[busy,setBusy]=useState(false),[feedback,setFeedback]=useState('');
  async function load(){setRows(await request<Announcement[]>('/status-pages/'+pageId+'/announcements'));}
+ useVisibleRefresh(load,!busy&&!title&&!message&&!affected.length);
  useEffect(()=>{setSelected('');setRows([]);load().catch(e=>setFeedback(e.message));},[pageId]);
  const current=rows.find(r=>r.id===selected);
  return <section className="status-communications launch-content"><h3>Comunicados de incidencias</h3><p className="muted">La explicación publicada y su gravedad son editoriales. No cambian las mediciones técnicas ni cierran sus incidencias.</p><label>Comunicado<select value={selected} onChange={e=>{const row=rows.find(r=>r.id===e.target.value);setSelected(e.target.value);setState(row?.state??'investigating');setPublished(row?.published??false);setMessage('');}}><option value="">Nuevo comunicado</option>{rows.map(r=><option key={r.id} value={r.id}>{r.title} · {ANNOUNCEMENT_STATES[r.state]}{r.published?' · público':' · borrador'}</option>)}</select></label>

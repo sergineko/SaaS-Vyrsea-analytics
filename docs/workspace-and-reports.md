@@ -1,0 +1,35 @@
+# Espacio de trabajo e informes
+
+El detalle del monitor muestra 24 horas, 7 días y 30 días en franjas independientes. Se consulta una sola ventana de hasta 30 días y se reutilizan sus agregados para las tres vistas. Los periodos fuera de la retención se identifican como no incluidos. El periodo personalizado mantiene visibles las tres franjas y respeta la retención en el servidor.
+
+Las páginas de estado comienzan en un directorio de páginas públicas y borradores. Cada página separa servicios/grupos, diseño/marca, publicación/inserción, comunicados y dominio Business. La navegación avisa antes de descartar cambios locales. La publicación, retirada y exportación de HTML conservan los controles y la caché existentes. La vista previa usa datos propios y no publica por sí misma.
+
+Las integraciones separan correo, webhooks e historial. Cada canal explica su propósito y los pasos para configurarlo. Los detalles de firma se mantienen en una guía técnica desplegable. No se habilitan envíos por cambiar estas pantallas. Dodo permanece en configuración de suscripción.
+
+## Exportación Business
+
+`GET /api/reports/export?filter=...` recibe JSON con kind, from, to, domains, monitors y cursor. Las selecciones vacías significan todo el espacio. Los filtros se intersectan. Se exige sesión activa, autorización del espacio y plan Business, también en cada página. El ámbito de cuenta no procede del filtro. Los roles de lectura pueden exportar lo que ya pueden consultar.
+
+Cada consulta devuelve hasta 500 registros más un centinela. La paginación usa monitor, fecha y clave de registro; no utiliza OFFSET ni cuenta todo el histórico. El servidor limita las consultas al periodo retenido. El resumen utiliza agregados horarios y las comprobaciones del tramo final, sin recorrer todo el histórico de checks para calcular su media. Los registros horarios incluyen horas completas. Las incidencias y los mantenimientos incluyen los que se solapan con el periodo.
+
+El informe completo contiene resumen por monitor, comprobaciones HTTP individuales, agregados horarios, incidencias y mantenimientos. El CSV utiliza un esquema común con tipo de registro, UTC, identificadores, dominio, URL, estado/configuración actuales, códigos, tiempos, errores, totales, disponibilidad, motivos y fechas. No exporta credenciales, sesiones, códigos de recuperación ni secretos. Las celdas se escapan y se neutralizan fórmulas de hojas de cálculo.
+
+El navegador genera archivos de hasta 50.000 filas; no solicita todo el histórico en una respuesta ni mantiene los objetos de todas las páginas. Si quedan datos, muestra «Descargar siguiente parte». Solo «Exportación completada» indica que se han recorrido todos los conjuntos seleccionados. Cancelar no descarga una parte incompleta. La demo identifica los datos simulados y no fabrica checks individuales a partir de agregados.
+
+## Directorio y conexiones
+
+«Administrar cuenta» permite editar el nombre de usuario, asignar plan/cuotas, editar contratos Business y aprobar/suspender/reactivar. El identificador estable, el histórico, las passkeys y las sesiones se conservan al renombrar. Se invalidan desafíos e invitaciones Business pendientes para evitar enlaces con el nombre anterior. La API de perfil acepta solo el nombre y no permite inyectar privilegios o planes. Las cuotas del equipo continúan validándose en la base de datos al cambiar de plan. La cuenta de propietario conserva su protección de plan y estado.
+
+El diagnóstico de PostgreSQL separa conexiones de Vyrsea activas, libres en el pool, transacciones sin actividad y sesiones de otros servicios. La medición inicial identificó cinco conexiones reutilizadas por Hyperdrive y siete sesiones/procesos de Supabase y diagnóstico, sin bloqueos ni transacciones abandonadas. Se conserva el máximo de cinco conexiones del rol y del pool. No se cierran los servicios internos de Supabase. La muestra sigue teniendo caché de cinco minutos y no escribe telemetría.
+
+El almacenamiento suma `pg_database_size(oid)` de todas las bases del proyecto, como documenta Supabase para Database size. Antes solo se contaba `postgres`: la medición del 24/10/2026 era 15,3 MB frente a 30,6 MB incluyendo `template0` y `template1`; esto explicaba el 3,1 % frente al 6 %. El panel separa total, base principal y esquema de aplicación, muestra la hora de lectura y conserva una caché máxima de cinco minutos. No necesita una migración ni ampliar permisos: el rol actual tiene CONNECT en esas tres bases, suficiente para consultar su tamaño. No se confunde este total con WAL/disco físico ni con el promedio de uso de la organización. La previsión del histórico usa ahora el total correcto como base.
+
+## Actualización automática
+
+`GET /api/dashboard/live?days=N` ejecuta una sola sentencia de lectura tras la autorización normal: dos consultas en total para el espacio propio, tres para uno compartido por la comprobación de pertenencia. Las subconsultas usan los índices por cuenta y monitor. Devuelve configuración y estado de monitores, límites vigentes, hasta 50 incidencias, 50 notificaciones y 100 mantenimientos, y solo los agregados de la hora en curso. No consulta checks ni horas cerradas, ni mantiene filas de versión o telemetría. El ETag excluye la hora de consulta; una respuesta 304 ahorra transferencia, aunque conserva la validación y la lectura actual. No se cachea la autorización.
+
+El navegador reemplaza la contribución de la hora actual dentro de los gráficos ya cargados, sin sumarla dos veces. Al cambiar de hora, conjunto de monitores, plan, retención o periodo se obtiene una instantánea completa nueva. También se reconcilia el histórico cada cinco minutos para recoger resultados atrasados de horas cerradas, reutilizando la caché histórica existente. Un 304 solo actualiza la hora de consulta, sin volver a combinar los gráficos. El detalle refresca su histórico cuando llega una nueva comprobación.
+
+Se consulta cada 20 segundos después de finalizar la petición anterior. Web Locks elige una pestaña visible por usuario, espacio, periodo y vista; BroadcastChannel comparte la instantánea en memoria con las demás. La petición fija el espacio del canal y no toma el destino de un selector que pueda cambiar mientras está en curso. Sin Web Locks se conserva el refresco visible por pestaña. Al ocultar la página se aborta la petición, se suelta el turno y se detiene el temporizador. La pestaña siguiente toma el relevo; offline detiene consultas y online reanuda. Los fallos aumentan el intervalo hasta dos minutos. Cada petición tiene un tiempo máximo de doce segundos. No se guarda información del panel en almacenamiento persistente del navegador.
+
+Los directorios de cuentas y páginas, y las integraciones se refrescan cada minuto mientras están visibles y sin formularios activos. No se pisan borradores abiertos. Infraestructura conserva sus ventanas propias: Cloudflare un minuto y diagnóstico PostgreSQL cinco minutos. La actualización del panel no modifica la frecuencia contratada de las sondas ni exige WebSockets, Realtime de Supabase o servicios de pago.

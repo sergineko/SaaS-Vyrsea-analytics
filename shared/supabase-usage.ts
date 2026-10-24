@@ -1,8 +1,9 @@
 export interface DatabaseTableUsage {name:string;bytes:number;indexBytes:number;estimatedRows:number;deadRows:number}
 export interface PlanDatabaseLoad {plan:string;activeMonitors:number;checksPerDay:number;retainedChecks:number;retainedHours:number}
 export interface SupabaseUsage {
-  fetchedAt:number;databaseBytes:number;applicationBytes:number;indexBytes:number;
+  fetchedAt:number;databaseBytes:number;primaryDatabaseBytes?:number;applicationBytes:number;indexBytes:number;
   databaseConnections:number;applicationConnections:number;maxConnections:number;cacheHitPercent:number|null;
+  applicationActive?:number;applicationIdle?:number;applicationIdleInTransaction?:number;otherConnections?:number;
   tables:DatabaseTableUsage[];plans:PlanDatabaseLoad[];
 }
 export const SUPABASE_REFERENCE={checkedOn:'2026-10-23',freeDatabaseBytes:500_000_000,freeEgressBytes:5_000_000_000,proBaseUsd:25,proDiskBytes:8_000_000_000,proEgressBytes:250_000_000_000,diskUsdPerGB:.125,egressUsdPerGB:.09} as const;

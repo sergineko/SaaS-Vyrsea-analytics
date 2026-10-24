@@ -18,6 +18,8 @@ import {team,workspaceContext,auditStatement} from './team';
 import {auditedDatabase} from './audit';
 import {alerts} from './alerts';
 import {subscriptionSeats} from './seats';
+import {reports} from './reports';
+import {liveDashboard} from './live-dashboard';
 
 export const api = new Hono<AppEnv>();
 api.use('*', async (c, next) => {
@@ -33,6 +35,8 @@ api.use('*', async (c, next) => {
   await next();
 });
 api.route('/',team);
+api.route('/reports',reports);
+api.get('/dashboard/live',liveDashboard);
 api.get('/subscription',async c=>{
   if(!['owner','admin'].includes(c.get('workspaceRole')))throw new HTTPException(403,{message:'La suscripción requiere administración del espacio.'});
   return c.json({subscription:await subscriptionSeats(c.env,c.get('user').id),billingEnabled:false});
@@ -75,6 +79,7 @@ api.get('/dashboard', async c => {
   ]);
   return c.json({ user: c.get('actor')??c.get('user'),workspace:{id:userId,name:c.get('user').username,role:c.get('workspaceRole')}, monitors: items, stats: statistics.stats, incidents: incidents.results, notifications: notifications.results,
     maintenance: windows.results, limits, windowDays: days, activeProbeProviders: ['cloudflare'], multiProbeActive: false, serverTime: timestamp,
+    currentStats:statistics.currentStats,liveHour:Math.floor(timestamp/3600)*3600,
     historyAsOf:statistics.historyAsOf,historyCacheSeconds:300 });
 });
 api.route('/',maintenance);

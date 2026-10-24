@@ -67,8 +67,15 @@ describe.skipIf(!connection).sequential('PostgreSQL 17: real Worker, transaction
     expect(data.accounts.find(a=>a.username===owner)).toMatchObject({monitors:1});expect(typeof data.accounts[0].createdAt).toBe('number');expect(data.usage.activeAccounts).toBe(2);
     const infra=await api('/owner/infrastructure');expect(infra.status).toBe(200);const metrics=await infra.json() as {databaseBytes:number;database:{provider:string;applicationBytes:number}};
     expect(metrics.database.provider).toBe('supabase');expect(metrics.databaseBytes).toBeGreaterThan(0);expect(metrics.database.applicationBytes).toBeGreaterThan(0);
-    const detailed=metrics as typeof metrics&{supabase:{databaseConnections:number;maxConnections:number;tables:unknown[];plans:unknown[]}};
+    const detailed=metrics as typeof metrics&{supabase:{databaseBytes:number;primaryDatabaseBytes:number;databaseConnections:number;maxConnections:number;tables:unknown[];plans:unknown[]}};
     expect(detailed.supabase.databaseConnections).toBeGreaterThan(0);expect(detailed.supabase.maxConnections).toBeGreaterThan(0);expect(detailed.supabase.tables.length).toBeGreaterThan(19);expect(detailed.supabase.plans).toHaveLength(1);
+    expect(detailed.supabase.primaryDatabaseBytes).toBeGreaterThan(0);
+    // The project includes PostgreSQL template databases as well as postgres.
+    expect(detailed.supabase.databaseBytes).toBeGreaterThan(detailed.supabase.primaryDatabaseBytes);
+    expect(metrics.databaseBytes).toBe(detailed.supabase.databaseBytes);
+    const live=await api('/dashboard/live?days=90');expect(live.status).toBe(200);
+    const liveData=await live.json() as {monitors:{id:string;paused:boolean}[];currentStats:unknown[];limits:{monitors:null}};
+    expect(liveData.monitors[0]).toMatchObject({id:monitor,paused:false});expect(liveData.limits.monitors).toBeNull();expect(liveData.currentStats).toEqual([]);
   });
   it('applies an entire batch atomically on constraint failure',async()=>{
     await expect(db.batch([db.prepare("UPDATE monitors SET name='Should roll back' WHERE id=?").bind(monitor),db.prepare("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES('orphan','missing-user',1)")])).rejects.toThrow();
@@ -91,6 +98,13 @@ describe.skipIf(!connection).sequential('PostgreSQL 17: real Worker, transaction
     const slot=now()-60;const responses=await Promise.all(Array.from({length:4},()=>result(slot)));expect(responses.every(r=>r.status===200)).toBe(true);
     expect((await db.prepare('SELECT count(*) AS n FROM checks WHERE monitor_id=?').bind(monitor).first<{n:number}>())!.n).toBe(1);
     expect((await db.prepare('SELECT sum(total) AS n FROM hourly_stats WHERE monitor_id=?').bind(monitor).first<{n:number}>())!.n).toBe(1);
+  });
+  it('exports detailed Business report datasets from native PostgreSQL without crossing workspace ownership',async()=>{
+    const from=Math.floor(now()/3600)*3600-3600,to=now();
+    for(const kind of ['summary','checks','hourly','incidents','maintenance']){
+      const response=await api('/reports/export?filter='+encodeURIComponent(JSON.stringify({kind,from,to,domains:[],monitors:[],cursor:null})));expect(response.status).toBe(200);
+      const page=await response.json() as {rows:{monitor_id:string;monitor_name:string}[]};expect(page.rows.every(r=>r.monitor_id===monitor)).toBe(true);
+    }
   });
   it('stores a result with one network statement and rejects a suspended account even after a probe has started',async()=>{
     const id=randomUUID();await db.prepare('INSERT INTO monitors(id,user_id,name,url,root_domain,next_check_at,created_at) VALUES(?,?,?,?,?,0,?)').bind(id,owner,'One statement','https://single.example.org/','example.org',now()).run();

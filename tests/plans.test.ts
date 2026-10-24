@@ -73,7 +73,9 @@ describe.sequential('Four plans with billing disabled',()=>{
     expect((await get('free','/billing/checkout','POST')).status).toBe(404);
   });
   it.each([['free',900],['starter',300],['pro',60]] as const)('enforces %s cadence even for manual checks',async(plan,interval)=>{
-    const timestamp=Math.floor(now/60)*60+5;
+    // Start the cooldown at this test's clock, not at module collection time.
+    // A longer suite may otherwise let the real one-minute Pro cooldown expire.
+    const timestamp=Math.floor(Date.now()/1000);
     expect(await reserve(plan,timestamp)).toBe(true);
     expect((await db.prepare('SELECT next_check_at FROM monitors WHERE id=?').bind(`monitor-${plan}`).first<{next_check_at:number}>())!.next_check_at).toBe(timestamp+interval);
     expect(await reserve(plan,timestamp+interval-1)).toBe(false);

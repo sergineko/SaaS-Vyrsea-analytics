@@ -16,6 +16,8 @@ export interface DashboardData {
   user: User; monitors: Monitor[]; stats: HourStat[]; incidents: Incident[]; notifications: Notification[];
   maintenance: MaintenanceWindow[];
   limits: PlanLimits; windowDays: number; activeProbeProviders: string[]; multiProbeActive: boolean; serverTime: number;
+  currentStats?:HourStat[];liveHour?:number;
   demoContext?: { mode: 'free' | 'pro' | 'business'; workspace: string; customQuotaExample: boolean };
 }
+export type DashboardLive=Pick<DashboardData,'workspace'|'user'|'monitors'|'incidents'|'notifications'|'maintenance'|'limits'|'windowDays'|'serverTime'>&{currentStats:HourStat[];liveHour:number};
 export interface Check { checkedAt: number; ok: number; statusCode: number | null; responseMs: number; error: string | null }

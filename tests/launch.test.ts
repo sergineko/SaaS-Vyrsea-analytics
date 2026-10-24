@@ -29,6 +29,30 @@ beforeEach(async()=>{
 });
 afterAll(async()=>{await mf?.dispose();});
 describe.sequential('Commercial preparation without paid activation',()=>{
+ it('exports owned raw checks with stable keyset pages, date and monitor filters, enforcing Business',async()=>{
+   const start=Math.floor(now()/3600)*3600-3600,end=now();
+   await db.prepare(`INSERT INTO checks(id,monitor_id,checked_at,ok,status_code,response_ms,error)
+    WITH RECURSIVE n(value) AS (SELECT 0 UNION ALL SELECT value+1 FROM n WHERE value<501)
+    SELECT 'export-'||CAST(value AS TEXT),?,?+value,CASE WHEN value=0 THEN 0 ELSE 1 END,200,10,NULL FROM n`).bind(monitor,start+10).run();
+   const filter={kind:'checks',from:start,to:end,domains:[],monitors:[],cursor:null};
+   const path=(value:unknown)=>'/reports/export?filter='+encodeURIComponent(JSON.stringify(value));
+   const first=await api(path(filter));expect(first.status).toBe(200);const page=await first.json() as {rows:{record_id:string;monitor_id:string}[];nextCursor:string};expect(page.rows).toHaveLength(500);expect(page.rows.every(r=>r.monitor_id===monitor)).toBe(true);
+   const second=await(await api(path({...filter,cursor:JSON.parse(page.nextCursor)}))).json() as typeof page;expect(second.rows).toHaveLength(2);expect(second.nextCursor).toBeNull();expect(new Set([...page.rows,...second.rows].map(r=>r.record_id)).size).toBe(502);
+   const excluded=await(await api(path({...filter,domains:['another.example']}))).json() as typeof page;expect(excluded.rows).toHaveLength(0);
+   expect((await api(path(filter),'GET',undefined,'member')).status).toBe(403);
+   expect((await api(path({...filter,from:start-100*86400}))).status).toBe(400);
+   const summary=await api(path({...filter,kind:'summary'}));expect(summary.status).toBe(200);
+ });
+ it('lets only the global administrator rename accounts while preserving identity, keys, plan and sessions',async()=>{
+   await db.prepare("INSERT INTO credentials(id,user_id,public_key,transports) VALUES('rename-key','member','fixture','[]')").run();
+   expect((await api('/owner/accounts/member/profile','PATCH',{username:'renamed-member'},'other')).status).toBe(403);
+   expect((await api('/owner/accounts/member/profile','PATCH',{username:'owner'})).status).toBe(409);
+   expect((await api('/owner/accounts/member/profile','PATCH',{username:'renamed-member',isOwner:true})).status).toBe(400);
+   expect((await api('/owner/accounts/member/profile','PATCH',{username:'renamed-member'})).status).toBe(200);
+   expect(await db.prepare("SELECT id,username,plan_id,is_owner FROM users WHERE id='member'").first()).toMatchObject({id:'member',username:'renamed-member',plan_id:'free',is_owner:0});
+   expect(await db.prepare("SELECT user_id FROM credentials WHERE id='rename-key'").first()).toMatchObject({user_id:'member'});
+   expect((await api('/dashboard','GET',undefined,'member')).status).toBe(200);
+ });
  it('offers Pro teams, reserves at most three seats and frees cancelled invitations without billing pending users',async()=>{
    await db.prepare("UPDATE users SET plan_id='pro' WHERE id='member'").run();
    await db.prepare("INSERT INTO users(id,username,created_at,account_status,last_active_at) VALUES('third','third',?,'active',?)").bind(now(),now()).run();

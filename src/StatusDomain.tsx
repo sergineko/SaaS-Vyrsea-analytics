@@ -1,10 +1,12 @@
 import {useEffect,useState} from 'react';
 import {request} from './api';
 import {Modal,dateTime} from './ui';
+import {useVisibleRefresh} from './useVisibleRefresh';
 type Data={ready:boolean;cname:string|null;domain:null|{hostname:string;verificationName:string;verificationValue:string;verifiedAt:number|null;certificateStatus:string;validation:unknown[];checkedAt:number|null}};
 export function StatusDomain({pageId}:{pageId:string}){
  const [data,setData]=useState<Data|null>(null),[hostname,setHostname]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[remove,setRemove]=useState(false);
  async function load(){setData(await request<Data>('/status-pages/'+pageId+'/domain'));}
+ useVisibleRefresh(load,!busy&&!hostname&&!remove);
  useEffect(()=>{setData(null);load().catch(e=>setMessage(e.message));},[pageId]);
  async function act(fn:()=>Promise<unknown>){setBusy(true);setMessage('');try{await fn();await load();}catch(e){setMessage((e as Error).message);}finally{setBusy(false);}}
  const path='/status-pages/'+pageId+'/domain';

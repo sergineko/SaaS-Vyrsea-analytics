@@ -1,7 +1,8 @@
+import {ReportsPanel} from './ReportsPanel';
 import {SeatBilling} from './SeatBilling';
 import {seatPricing} from '../shared/seats';
 import {StatusPageEditor} from './StatusPageEditor';
-import {IntegrationGuide} from './IntegrationGuide';
+import {AlertSettings} from './AlertSettings';
 import { useMemo, useState } from 'react';
 import { Activity, ArrowDownToLine, ArrowRight, Check, ChevronDown, ChevronRight, Clock3, Code2, Globe2, LayoutList, Radio, Search, ShieldCheck, Users } from 'lucide-react';
 import { DEMO_CLIENTS } from './demo';
@@ -46,12 +47,6 @@ export function AdvancedDemo({ data, onSelect }: { data: DashboardData; onSelect
   const selectedMaintenance = statusMonitors.some(m => maintenanceFor(m.id,data.maintenance));
   const selectedPending = statusMonitors.some(m => m.status === 'degraded' || m.status === 'pending');
   const statusHeadline = selectedHasIncident ? 'Incidencia en un servicio' : selectedMaintenance ? 'Mantenimiento programado' : selectedPending ? 'Verificando un servicio' : 'Todos los servicios operativos';
-  function exportExample() {
-    const rows = [['INFORME SIMULADO VYRSEA', `${data.windowDays} días`, 'Sin mediciones reales'],['Cliente','Dominio','Monitores','Disponibilidad (%)','Respuesta media (ms)'],...portfolio.map(c => [c.name,c.domain,String(c.monitors.length),c.uptime,String(c.latency??'')])];
-    const csv = '\uFEFF' + rows.map(row => row.map(cell => `"${cell.replaceAll('"','""')}"`).join(';')).join('\r\n');
-    const url = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-    const link = document.createElement('a');link.href=url;link.download='vyrsea-informe-simulado.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-  }
   return <div className="advanced-demo">
     <nav className="advanced-nav" aria-label="Vistas de la demo avanzada">{items.map(({id,name,icon:Icon}) => <button key={id} aria-current={view===id?'page':undefined} className={view===id?'selected':''} onClick={()=>setView(id)}><Icon size={15}/>{name}</button>)}</nav>
     <div className="advanced-caption"><span><i/>VISTA PREVIA INTERACTIVA</span><p>Clientes ficticios y resultados simulados. {business?'Cuotas Business de ejemplo. ':''}Las conexiones externas y los pagos siguen deshabilitados.</p></div>
@@ -81,9 +76,9 @@ export function AdvancedDemo({ data, onSelect }: { data: DashboardData; onSelect
       <div className="advanced-explainer"><ShieldCheck size={20}/><p>La propuesta utiliza un quorum entre proveedores para contrastar errores. Los errores aislados se distinguen de las caídas globales. La integración real y sus reglas de confirmación siguen en desarrollo.</p></div>
     </section>}
     {view==='status'&&<StatusPageEditor data={data} demo/>}
-    {view==='integrations'&&<IntegrationGuide/>}
+    {view==='integrations'&&<AlertSettings demo/>}
     {view==='team'&&<><SeatBilling subscription={{plan:business?'business':'pro',users:3,pending:0,maximum:business?null:3,billing:seatPricing(business?'business':'pro',3,business?6900:null)}}/><div className="team-layout"><section className="panel"><SectionHeading eyebrow={business?"BUSINESS":"PRO / AGENCIA"} title="El equipo, con el acceso adecuado" description="Usuarios ficticios. Esta vista no invita personas ni modifica permisos reales."/><div className="table-scroll"><table className="team-table"><thead><tr><th scope="col">Persona</th><th scope="col">Rol</th><th scope="col">Alcance</th></tr></thead><tbody>{[['Marina Torres','Administradora','Todo el espacio'],['Álex Vidal','Operador','Monitores e incidencias'],['Lucía Serra','Lectora','Cartera y resultados']].map(([name,role,scope])=><tr key={name}><th scope="row"><span className="member-avatar">{name.split(' ').map(n=>n[0]).join('')}</span>{name}</th><td>{role}</td><td>{scope}</td></tr>)}</tbody></table></div></section><section className="panel role-preview"><h2>Explora un rol</h2><p>Simula qué acciones tendría disponibles cada perfil.</p><label>Rol de ejemplo<select aria-label="Rol de ejemplo" value={role} onChange={e=>setRole(e.target.value)}><option value="viewer">Lectura</option><option value="operator">Operación</option><option value="owner">Administrador</option></select></label><ul aria-live="polite">{['Consultar disponibilidad e histórico',...(role!=='viewer'?['Gestionar monitores y mantenimientos']:[]),...(role==='owner'?['Administrar equipo, permisos y configuración']:[])].map(permission=><li key={permission}><Check size={15}/>{permission}</li>)}</ul><small>Simulación local. En tu cuenta, los permisos se comprueban en el servidor.</small></section></div></>}
-    {business&&view==='reports'&&<section className="panel"><SectionHeading eyebrow="BUSINESS · INFORME DE EJEMPLO" title="Una revisión lista para compartir" description={`Resumen de los últimos ${data.windowDays} días seleccionados. Todos los datos del informe son simulados.`}/><div className="report-overview"><div><span>ESPACIO</span><h3>Grupo Meridiano</h3><p>{portfolio.length} dominios · {data.monitors.length} monitores · corte {dateTime(data.serverTime)}</p></div><button className="button secondary" onClick={exportExample}><ArrowDownToLine size={16}/>Descargar CSV de ejemplo</button></div><div className="table-scroll"><table className="portfolio-table"><thead><tr><th scope="col">Cliente</th><th scope="col">Monitores</th><th scope="col">Disponibilidad</th><th scope="col">Respuesta media</th></tr></thead><tbody>{portfolio.map(c=><tr key={c.domain}><th scope="row">{c.name}</th><td>{c.monitors.length}</td><td>{c.uptime} %</td><td>{c.latency} ms</td></tr>)}</tbody></table></div><p className="advanced-footnote">El CSV identifica expresamente los datos como simulados. Los informes programados y sus envíos todavía no están operativos.</p></section>}
+    {business&&view==='reports'&&<ReportsPanel data={data} demo/>}
   </div>;
 }
 
