@@ -1,6 +1,6 @@
 {
   "name": "vyrsea-monitor",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": true,
   "packageManager": "pnpm@11.25.0",
   "type": "module",
@@ -30,6 +30,7 @@
     "drizzle-orm": "^0.44.7",
     "hono": "^4.10.2",
     "lucide-react": "^0.468.0",
+    "postal-mime": "^4.1.4",
     "postgres": "^3.4.9",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

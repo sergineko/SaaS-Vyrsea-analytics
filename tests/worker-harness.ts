@@ -7,10 +7,20 @@ import { runRetentionJob } from '../worker/retention-job';
 import {measureD1} from './d1-metrics';
 import {dashboardStatistics} from '../worker/statistics';
 import {withDatabase,type DatabaseBindings} from '../worker/database';
+import {receiveSupportEmail,dispatchSupportEmail} from '../worker/support-email';
 export default {
   ...worker,
   async fetch(request: Request, bindings: DatabaseBindings, ctx: ExecutionContext) {
     return withDatabase(bindings, async env => {
+    if(new URL(request.url).pathname==='/__test/support-email'){
+      const {raw,to='soporte@vyrsea.com',enabled=true,size}=await request.json() as {raw:string;to?:string;enabled?:boolean;size?:number};let forwarded=0;
+      const metrics=measureD1(env.DB);
+      await receiveSupportEmail({to,from:'envelope@example.com',raw:new Response(raw).body!,rawSize:size??new TextEncoder().encode(raw).length,headers:new Headers(raw.split(/\r?\n\r?\n/)[0].split(/\r?\n/).map(line=>{const index=line.indexOf(':');return [line.slice(0,index),line.slice(index+1).trim()];})),forward:async()=>{forwarded++;}} as unknown as ForwardableEmailMessage,{...env,DB:metrics.DB,SUPPORT_ADDRESS:'soporte@vyrsea.com',SUPPORT_FORWARD_TO:'fixture@example.com',SUPPORT_INBOUND_ENABLED:enabled?'1':'0'});
+      return Response.json({forwarded,...metrics.report()});
+    }
+    if(new URL(request.url).pathname==='/__test/support-dispatch'){
+      const metrics=measureD1(env.DB);await dispatchSupportEmail({...env,DB:metrics.DB});return Response.json(metrics.report());
+    }
     if(new URL(request.url).pathname==='/__test/statistics') {
       const {userId,ids,since,days,timestamp}=await request.json() as {userId:string;ids:string[];since:number;days:number;timestamp:number};
       const metrics=measureD1(env.DB),body=await dashboardStatistics({...env,DB:metrics.DB},userId,ids,since,days,timestamp);

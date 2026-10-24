@@ -28,20 +28,20 @@ async function consumeRecent(c: C, userId: string, sessionHash: string) {
     .bind(sessionHash, userId, nowSeconds()).first();
   if (!proof) throw new HTTPException(403, { message: 'Confirma tu passkey de nuevo antes de cambiar la seguridad.' });
 }
-async function challenge(c: C, kind: string, value: string, userId: string, context: string) {
+export async function challenge(c: C, kind: string, value: string, userId: string, context: string) {
   const id = crypto.randomUUID();
   await c.env.DB.prepare('INSERT INTO challenges(id,kind,challenge,user_id,context,expires_at) VALUES(?,?,?,?,?,?)')
     .bind(id, kind, value, userId, context, nowSeconds() + 300).run();
   putCookie(c, 'challenge', id, 300);
 }
-async function registration(c: C, userId: string, username: string, exclude = true) {
+export async function registration(c: C, userId: string, username: string, exclude = true) {
   const keys = exclude ? (await c.env.DB.prepare('SELECT id FROM credentials WHERE user_id=?').bind(userId).all<{id: string}>()).results : [];
   return generateRegistrationOptions({ rpName: 'Vyrsea', rpID: new URL(c.env.APP_ORIGIN).hostname,
     userName: username, userID: new TextEncoder().encode(userId), attestationType: 'none', supportedAlgorithmIDs: [-7, -257],
     authenticatorSelection: { residentKey: 'required', userVerification: 'required' }, excludeCredentials: keys.map(key => ({id: key.id})),
   });
 }
-async function verifyRegistration(c: C, expectedChallenge: string) {
+export async function verifyRegistration(c: C, expectedChallenge: string) {
   const response = await c.req.json<RegistrationResponseJSON>();
   const result = await verifySafely(() => verifyRegistrationResponse({ response, expectedChallenge,
     expectedOrigin: c.env.APP_ORIGIN, expectedRPID: new URL(c.env.APP_ORIGIN).hostname, requireUserVerification: true }));

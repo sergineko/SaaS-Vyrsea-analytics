@@ -25,6 +25,7 @@ export interface Env {
   EMAIL_FROM?: string;
   EMAIL?: {send(message:{to:string;from:string;subject:string;text:string;headers?:Record<string,string>}):Promise<{messageId:string}>};
   EMAIL_EVENTS_ENABLED?: string;
+  SUPPORT_ADDRESS?:string;SUPPORT_FORWARD_TO?:string;SUPPORT_INBOUND_ENABLED?:string;SUPPORT_EMAIL_ENABLED?:string;
   CLOUDFLARE_EMAIL_ZONE_ID?: string;
   CUSTOM_DOMAINS_ENABLED?: string;
   CUSTOM_DOMAINS_TOKEN?: string;

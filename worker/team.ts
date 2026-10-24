@@ -21,7 +21,7 @@ export async function workspaceContext(c:Context<AppEnv>,actor:User){
   if(!id||id===actor.id)return;
   const row=await c.env.DB.prepare(`SELECT u.id,u.username,u.created_at AS createdAt,u.account_status AS accountStatus,
     u.plan_id AS planId,u.last_active_at AS lastActiveAt,t.role FROM team_members t JOIN users u ON u.id=t.workspace_id
-    WHERE t.workspace_id=? AND t.user_id=? AND u.account_status='active' AND (u.plan_id IN ('pro','business') OR u.is_owner=1)`)
+    WHERE t.workspace_id=? AND t.user_id=? AND u.account_status='active' AND (u.plan_id IN ('pro','business') OR (u.is_owner=1 AND u.owner_apply_plan=0))`)
     .bind(id,actor.id).first<User&{role:'admin'|'operator'|'reader'}>();
   if(!row)throw new HTTPException(403,{message:'Ya no tienes acceso a este espacio.'});
   c.set('user',{...row,isOwner:false});c.set('workspaceRole',row.role);
@@ -36,13 +36,13 @@ export const team=new Hono<AppEnv>();
 team.get('/workspaces',async c=>{
   const actor=c.get('actor')??c.get('user');
   const rows=await c.env.DB.prepare(`SELECT u.id,u.username,t.role FROM team_members t JOIN users u ON u.id=t.workspace_id
-    WHERE t.user_id=? AND u.account_status='active' AND (u.plan_id IN ('pro','business') OR u.is_owner=1) ORDER BY u.username LIMIT 100`).bind(actor.id).all();
+    WHERE t.user_id=? AND u.account_status='active' AND (u.plan_id IN ('pro','business') OR (u.is_owner=1 AND u.owner_apply_plan=0)) ORDER BY u.username LIMIT 100`).bind(actor.id).all();
   return c.json({own:{id:actor.id,username:actor.username,role:'owner'},shared:rows.results,current:c.get('user').id,role:c.get('workspaceRole')});
 });
 team.post('/team/accept',async c=>{
   const actor=c.get('actor')??c.get('user'),{token}=z.object({token:z.string().min(30).max(100)}).strict().parse(await c.req.json()),now=nowSeconds();
   const row=await c.env.DB.prepare(`SELECT i.* FROM team_invitations i JOIN users u ON u.id=i.workspace_id
-    WHERE i.token_hash=? AND i.user_id=? AND i.claimed_at IS NULL AND i.expires_at>? AND u.account_status='active' AND (u.plan_id IN ('pro','business') OR u.is_owner=1)`)
+    WHERE i.token_hash=? AND i.user_id=? AND i.claimed_at IS NULL AND i.expires_at>? AND u.account_status='active' AND (u.plan_id IN ('pro','business') OR (u.is_owner=1 AND u.owner_apply_plan=0))`)
     .bind(await digest(token),actor.id,now).first<{id:string;workspace_id:string;role:string}>();
   if(!row)throw new HTTPException(409,{message:'La invitación ha caducado, ya se utilizó o pertenece a otro usuario.'});
   const results=await c.env.DB.batch([

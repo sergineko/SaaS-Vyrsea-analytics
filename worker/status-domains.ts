@@ -55,7 +55,7 @@ export async function customStatusRequest(request:Request,env:Env){
   if(url.hostname===new URL(env.APP_ORIGIN).hostname||url.hostname==='localhost'||url.hostname.endsWith('.workers.dev'))return null;
   if(!ready(env)||request.method!=='GET'||!['/','/status.json'].includes(url.pathname))return new Response('Página no encontrada',{status:404});
   const row=await env.DB.prepare(`SELECT d.page_id FROM status_domains d JOIN status_pages s ON s.id=d.page_id JOIN users u ON u.id=s.user_id
-    WHERE d.hostname=? AND d.certificate_status='active' AND d.verified_at IS NOT NULL AND s.published=1 AND u.account_status='active' AND (u.is_owner=1 OR u.plan_id='business')`).bind(url.hostname).first<{page_id:string}>();
+    WHERE d.hostname=? AND d.certificate_status='active' AND d.verified_at IS NOT NULL AND s.published=1 AND u.account_status='active' AND ((u.is_owner=1 AND u.owner_apply_plan=0) OR u.plan_id='business')`).bind(url.hostname).first<{page_id:string}>();
   if(!row)return new Response('Página no encontrada',{status:404});
   return new Request(`${env.APP_ORIGIN}/api/public/status/${row.page_id}${url.pathname==='/'?'/view':''}`,{method:'GET'});
 }

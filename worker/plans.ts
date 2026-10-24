@@ -2,11 +2,11 @@ import type { Env } from './env';
 import { PLAN_CATALOG, type PlanLimits } from '../shared/plans';
 import { registeredDomain } from '../shared/domains';
 
-export const accountPlanColumns=`p.id,p.name,u.is_owner AS owner,
+export const accountPlanColumns=`p.id,p.name,CASE WHEN u.is_owner=1 AND u.owner_apply_plan=0 THEN 1 ELSE 0 END AS owner,
     CASE WHEN p.id='business' THEN u.domain_limit ELSE p.max_domains END AS domains,
     CASE WHEN p.id='business' THEN u.monitor_limit ELSE p.max_monitors END AS monitors,
     CASE WHEN p.id='business' THEN u.history_days_limit ELSE p.history_days END AS historyDays,p.interval_seconds AS intervalSeconds`;
-export const accountPlanFrom=`FROM users u JOIN plan_limits p ON p.id=CASE WHEN u.is_owner=1 THEN 'business' ELSE u.plan_id END WHERE u.id=?`;
+export const accountPlanFrom=`FROM users u JOIN plan_limits p ON p.id=CASE WHEN u.is_owner=1 AND u.owner_apply_plan=0 THEN 'business' ELSE u.plan_id END WHERE u.id=?`;
 export function resolveAccountPlan(plan:(PlanLimits&{owner:number})|null):PlanLimits {
   const definition = PLAN_CATALOG.find(item => item.id === plan?.id);
   if (!plan || !definition || (!plan.owner && (!plan.domains || !plan.monitors)) || !plan.historyDays) throw new Error('Missing account plan or custom contract limits');

@@ -29,6 +29,8 @@ La migración `0006` conserva activas las cuentas anteriores y les concede un pe
 
 ## Cuenta Business del propietario
 
+El directorio permite editar también la cuenta propietaria: datos, plan, cuotas de referencia y condiciones Business. Por defecto conserva dominios/monitores ilimitados y exención de pago. Puede activar **Aplicar a mi cuenta los límites y funciones del plan para probarlo**; ese modo aplica cuotas y funciones reales sin retirar la administración ni generar cargos. Desactivarlo vuelve a Business ilimitado. Los clientes siempre respetan su plan. Cambiar a un plan con menos plazas exige retirar antes los miembros/invitaciones que excedan su capacidad; no se eliminan monitores automáticamente.
+
 Registra personalmente tu passkey en el dominio definitivo. Desde un terminal autenticado en la cuenta Cloudflare correcta, identifica el UUID de esa cuenta y concede el rol con:
 
 ```powershell

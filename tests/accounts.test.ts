@@ -56,6 +56,22 @@ beforeEach(async () => {
 afterAll(async () => { release?.(); await mf?.dispose(); });
 
 describe.sequential('Owner approval and inactive Free accounts on actual Worker/D1', () => {
+  it('edits the owner contract and can apply a real plan for testing without removing ownership or billing exemption',async()=>{
+    expect((await api('/owner/accounts/owner/plan','PATCH',{planId:'business',domainLimit:1,monitorLimit:2,historyDaysLimit:30})).status).toBe(200);
+    expect((await(await api('/dashboard')).json() as {limits:{monitors:null}}).limits.monitors).toBeNull();
+    const contract=await(await api('/owner/accounts/owner/contract')).json() as Record<string,unknown>;expect(contract).toBeTruthy();
+    expect((await api('/owner/accounts/owner/contract','PUT',{company:'Empresa de prueba',contactEmail:'contacto@example.com',priceCents:8900,seatPriceCents:900,billingCycle:'monthly',notes:'Contrato de referencia sin cargos.'})).status).toBe(200);
+    const saved=await(await api('/owner/accounts/owner/contract')).json() as {contract:{priceCents:number;seatPriceCents:number};subscription:{billing:{exempt:boolean;totalCents:number}}};expect(saved.contract).toMatchObject({priceCents:8900,seatPriceCents:900});expect(saved.subscription.billing).toMatchObject({exempt:true,totalCents:0});
+    expect((await api('/owner/accounts/owner/plan','PATCH',{planId:'free',ownerApplyPlan:true})).status).toBe(200);
+    const limited=await(await api('/dashboard')).json() as {limits:{monitors:number;advancedDashboard:boolean};user:{isOwner:boolean}};
+    expect(limited.limits).toMatchObject({monitors:2,advancedDashboard:false});expect(limited.user.isOwner).toBe(true);
+    await monitor('owner','own-one');await monitor('owner','own-two');await expect(monitor('owner','own-three')).rejects.toThrow(/MONITOR_CAPACITY/);
+    expect((await api('/owner/accounts')).status).toBe(200);
+    expect((await api('/owner/accounts/owner/plan','PATCH',{planId:'business',ownerApplyPlan:false,domainLimit:1,monitorLimit:2,historyDaysLimit:30})).status).toBe(200);
+    await monitor('owner','own-three');
+    expect((await user('owner'))).toMatchObject({is_owner:1,owner_apply_plan:0,account_status:'active'});
+    expect((await api('/owner/accounts/free/plan','PATCH',{planId:'free',ownerApplyPlan:true})).status).toBe(400);
+  });
   it('exempts only the owner from domain, monitor and trial quotas', async () => {
     for(let i=0;i<12;i++)await db.prepare("INSERT INTO monitors(id,user_id,name,url,root_domain,next_check_at,created_at) VALUES(?,'owner',?,?,?,0,?)")
       .bind(`owned-${i}`,`Service ${i}`,`https://domain${i}.com/`,`domain${i}.com`,now()).run();
@@ -70,7 +86,7 @@ describe.sequential('Owner approval and inactive Free accounts on actual Worker/
     expect((await api('/owner/accounts/free/plan','PATCH',input,token('free'))).status).toBe(403);
     expect((await api('/owner/accounts/free/plan','PATCH',{...input,isOwner:1})).status).toBe(400);
     expect((await api('/owner/accounts/free/plan','PATCH',{planId:'business'})).status).toBe(400);
-    expect((await api('/owner/accounts/owner/plan','PATCH',input)).status).toBe(409);
+    expect((await api('/owner/accounts/owner/plan','PATCH',input)).status).toBe(200);
     expect((await api('/owner/accounts/free/plan','PATCH',input)).status).toBe(200);
     expect(await user()).toMatchObject({plan_id:'business',is_owner:0,account_status:'active',domain_limit:2,monitor_limit:3,history_days_limit:45});
     const paid=await (await api('/dashboard','GET',undefined,token('free'))).json() as {limits:unknown};

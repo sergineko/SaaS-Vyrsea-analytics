@@ -1,3 +1,4 @@
+import {lazy,Suspense,useState} from 'react';
 import { Activity, ArrowRight, Check, ChevronRight, Clock3, Fingerprint, Globe2, ShieldCheck } from 'lucide-react';
 import { Logo } from './Brand';
 import { Pricing } from './Pricing';
@@ -11,8 +12,12 @@ export const FAQ = [
   ['¿Se envían alertas por correo?', 'En esta versión las alertas se consultan dentro de Vyrsea. Las alertas por email están previstas desde Starter. Los planes de pago todavía no se pueden contratar.'],
 ] as const;
 
+const ContactModal=lazy(()=>import('./ContactModal'));
+
 export function Landing({ onAuth, onDemo }: { onAuth: (mode: 'register' | 'login') => void; onDemo: () => void }) {
+  const [contact,setContact]=useState(false);
   return <div className="landing">
+    {contact&&<Suspense fallback={null}><ContactModal onClose={()=>setContact(false)}/></Suspense>}
     <a href="#contenido" className="skip-link">Saltar al contenido</a>
     <header className="site-header"><nav className="landing-nav" aria-label="Navegación principal"><Logo /><div className="public-nav"><a href="#producto">Producto</a><a href="#planes">Planes</a><a href="#preguntas">Preguntas frecuentes</a></div><div className="public-access"><button className="text-button" onClick={() => onAuth('login')}>Entrar</button><button className="button primary" onClick={() => onAuth('register')}>Crear cuenta <ArrowRight size={15} /></button></div></nav></header>
     <main id="contenido">
@@ -23,6 +28,6 @@ export function Landing({ onAuth, onDemo }: { onAuth: (mode: 'register' | 'login
       <Pricing onAuth={onAuth} />
       <section id="preguntas" className="faq-section"><div><p className="small-label">ANTES DE EMPEZAR</p><h2>Preguntas frecuentes</h2><p>Qué hace Vyrsea hoy y cómo se cuentan tus servicios.</p></div><div className="faq-list">{FAQ.map(([question, answer]) => <details key={question}><summary>{question}<ChevronRight size={17} aria-hidden="true" /></summary><p>{answer}</p></details>)}</div></section>
       <section className="closing-cta"><div><h2>Tu primer dominio, en su sitio.</h2><p>Dos monitores gratuitos para empezar a vigilar lo que importa en tu negocio.</p></div><button className="button primary large" onClick={() => onAuth('register')}>Crear mi cuenta <ArrowRight size={17} /></button></section>
-    </main><footer className="landing-footer"><Logo /><span>Monitorización HTTP para negocios y agencias.</span><div><a href="#preguntas">Alcance del servicio</a><a href="/llms.txt">Información para asistentes</a><span>© 2026 Vyrsea</span></div></footer>
+    </main><footer className="landing-footer"><Logo /><span>Monitorización HTTP para negocios y agencias.</span><div><button className="text-button" onClick={()=>setContact(true)}>Contacto</button><a href="#preguntas">Alcance del servicio</a><a href="/llms.txt">Información para asistentes</a><span>© 2026 Vyrsea</span></div></footer>
   </div>;
 }

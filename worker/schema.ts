@@ -5,6 +5,7 @@ export const users = sqliteTable('users', {
   domainLimit: integer('domain_limit'), monitorLimit: integer('monitor_limit'), historyDaysLimit: integer('history_days_limit'),
   accountStatus: text('account_status', { enum: ['pending','active','suspended'] }).notNull().default('pending'),
   isOwner: integer('is_owner', { mode: 'boolean' }).notNull().default(false), lastActiveAt: integer('last_active_at').notNull().default(0),
+  ownerApplyPlan:integer('owner_apply_plan',{mode:'boolean'}).notNull().default(false),
   statusChangedAt: integer('status_changed_at').notNull().default(0), suspensionReason: text('suspension_reason'),
   reviewRequestedAt: integer('review_requested_at'), monitoringSince: integer('monitoring_since').notNull().default(0),
 });

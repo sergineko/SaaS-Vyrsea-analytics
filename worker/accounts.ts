@@ -72,7 +72,8 @@ owner.patch('/accounts/:id/profile',async c=>{
 owner.get('/accounts', async c => {
   await expireInactiveAccounts(c.env);
   const [accounts, usage] = await c.env.DB.batch([
-    c.env.DB.prepare(`SELECT u.id,u.username,u.created_at AS createdAt,u.account_status AS accountStatus,u.is_owner AS isOwner,
+    c.env.DB.prepare(`SELECT u.id,u.username,u.created_at AS createdAt,u.account_status AS accountStatus,u.is_owner AS isOwner,u.owner_apply_plan AS ownerApplyPlan,
+      CASE WHEN EXISTS(SELECT 1 FROM platform_staff ps WHERE ps.user_id=u.id) THEN 1 ELSE 0 END AS isSupport,
       u.plan_id AS planId,u.last_active_at AS lastActiveAt,u.status_changed_at AS statusChangedAt,u.suspension_reason AS suspensionReason,
       u.review_requested_at AS reviewRequestedAt,u.domain_limit AS domainLimit,u.monitor_limit AS monitorLimit,u.history_days_limit AS historyDaysLimit,
       COUNT(m.id) AS monitors,COUNT(DISTINCT m.root_domain) AS domains,
@@ -93,19 +94,21 @@ owner.get('/accounts', async c => {
     capacity: estimateCapacity(measured.checksPerDay, measured.activeMonitors, measured.fastestChecksPerDay),databaseProvider:c.env.DATABASE_PROVIDER==='supabase'?'supabase':'d1', inactivityDays: 14 });
 });
 const planInput = z.discriminatedUnion('planId', [
-  z.object({planId:z.literal('business'),domainLimit:z.number().int().min(1).max(1_000_000),monitorLimit:z.number().int().min(1).max(1_000_000),historyDaysLimit:z.number().int().min(1).max(365)}).strict(),
-  z.object({planId:z.enum(['free','starter','pro'])}).strict(),
+  z.object({planId:z.literal('business'),domainLimit:z.number().int().min(1).max(1_000_000),monitorLimit:z.number().int().min(1).max(1_000_000),historyDaysLimit:z.number().int().min(1).max(365),ownerApplyPlan:z.boolean().optional()}).strict(),
+  z.object({planId:z.enum(['free','starter','pro']),ownerApplyPlan:z.boolean().optional()}).strict(),
 ]);
 owner.patch('/accounts/:id/plan', async c => {
   const input=planInput.parse(await c.req.json()), id=c.req.param('id'), timestamp=nowSeconds();
-  const target=await c.env.DB.prepare('SELECT id,is_owner FROM users WHERE id=?').bind(id).first<{id:string;is_owner:number}>();
+  const target=await c.env.DB.prepare('SELECT id,is_owner,owner_apply_plan FROM users WHERE id=?').bind(id).first<{id:string;is_owner:number;owner_apply_plan:number}>();
   if(!target)throw new HTTPException(404,{message:'No se ha encontrado la cuenta.'});
-  if(target.is_owner)throw new HTTPException(409,{message:'El propietario tiene acceso completo y no se modifica desde este formulario.'});
+  if(!target.is_owner&&input.ownerApplyPlan!==undefined)throw new HTTPException(400,{message:'El modo de prueba de propietario no corresponde a una cuenta de cliente.'});
+  const apply=target.is_owner?(input.ownerApplyPlan??(input.planId!=='business'||Boolean(target.owner_apply_plan))):false;
+  if(target.is_owner&&!apply&&input.planId!=='business')throw new HTTPException(400,{message:'El acceso ilimitado utiliza Business. Activa los límites del plan para probar otro.'});
   const interval=await c.env.DB.prepare('SELECT interval_seconds FROM plan_limits WHERE id=?').bind(input.planId).first<{interval_seconds:number}>();
   const resumeAt=(Math.floor(timestamp/60)+1)*60;
   await c.env.DB.batch([
-    c.env.DB.prepare(`UPDATE users SET plan_id=?,domain_limit=?,monitor_limit=?,history_days_limit=?,monitoring_since=? WHERE id=? AND is_owner=0`)
-      .bind(input.planId,input.planId==='business'?input.domainLimit:null,input.planId==='business'?input.monitorLimit:null,input.planId==='business'?input.historyDaysLimit:null,resumeAt,id),
+    c.env.DB.prepare(`UPDATE users SET plan_id=?,domain_limit=?,monitor_limit=?,history_days_limit=?,monitoring_since=?,owner_apply_plan=? WHERE id=?`)
+      .bind(input.planId,input.planId==='business'?input.domainLimit:null,input.planId==='business'?input.monitorLimit:null,input.planId==='business'?input.historyDaysLimit:null,resumeAt,Number(apply),id),
     c.env.DB.prepare('DELETE FROM check_jobs WHERE monitor_id IN (SELECT id FROM monitors WHERE user_id=?)').bind(id),
     c.env.DB.prepare('UPDATE monitors SET next_check_at=MAX(COALESCE(last_checked_at,0)+?,?) WHERE user_id=?').bind(interval!.interval_seconds,resumeAt,id),
   ]);

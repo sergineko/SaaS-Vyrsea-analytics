@@ -171,6 +171,23 @@ describe.skipIf(!connection).sequential('PostgreSQL 17: real Worker, transaction
     expect((await db.prepare('SELECT next_check_at AS n FROM monitors WHERE id=?').bind(id).first<{n:number}>())!.n).toBeGreaterThan(tick);
     expect((await db.prepare('SELECT count(*) AS n FROM check_jobs WHERE monitor_id=?').bind(id).first<{n:number}>())!.n).toBe(0);
   });
+  it('keeps tickets private, grants only global support, and atomically consumes assisted recovery on PostgreSQL',async()=>{
+    const target='pg-support-customer';await db.prepare("INSERT INTO users(id,username,created_at,last_active_at,plan_id,account_status) VALUES(?,?,?,?,'free','pending')").bind(target,target,now(),now()).run();
+    await db.prepare('INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)').bind(createHash('sha256').update(target).digest('base64'),target,now()+3600).run();
+    const response=await api('/help/tickets','POST',{subject:'Recover my access',message:'Please assist me with my lost passkey.',category:'access'},target);expect(response.status).toBe(201);const {id}=await response.json() as {id:string};
+    expect((await api('/support/tickets','GET',undefined,target)).status).toBe(403);
+    expect((await api('/help/tickets/'+id,'GET',undefined,other)).status).toBe(404);
+    expect((await api('/support/tickets/'+id+'/messages','POST',{visibility:'internal',message:'Private identity verification note.'})).status).toBe(200);
+    const portal=await(await api('/help/tickets/'+id,'GET',undefined,target)).json() as {events:unknown[]};expect(portal.events).toHaveLength(1);
+    await db.prepare('INSERT INTO recent_auth(session_hash,user_id,expires_at) VALUES(?,?,?) ON CONFLICT(session_hash) DO UPDATE SET expires_at=excluded.expires_at').bind(createHash('sha256').update(owner).digest('base64'),owner,now()+300).run();
+    const approval=await api('/support/tickets/'+id+'/recovery','POST',{verified:true,method:'manual_checks',note:'Previously verified contact and company representation checked.'});expect(approval.status).toBe(200);
+    const {url}=await approval.json() as {url:string},token=new URLSearchParams(new URL(url).hash.slice(1)).get('recovery');
+    const options=await api('/auth/assisted-recovery/options','POST',{token}),data=await options.json() as {challenge:string};expect(options.status).toBe(200);
+    const verification=await mf.dispatchFetch(origin+'/api/auth/assisted-recovery/verify',{method:'POST',headers:{Cookie:challengeCookie(options),Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(authenticator().register(data.challenge))});expect(verification.status).toBe(200);
+    expect(await db.prepare('SELECT state,recovery_state,token_hash FROM support_cases WHERE id=?').bind(id).first()).toMatchObject({state:'resolved',recovery_state:'used',token_hash:null});
+    expect(await db.prepare('SELECT account_status FROM users WHERE id=?').bind(target).first()).toMatchObject({account_status:'pending'});
+    expect((await api('/auth/assisted-recovery/options','POST',{token})).status).toBe(400);
+  });
   it('handles parallel unrelated monitors, duplicate deliveries and out-of-order results without corrupting aggregates',async()=>{
     const ids=Array.from({length:4},()=>randomUUID()),slot=now()+900;
     for(const id of ids)await db.prepare('INSERT INTO monitors(id,user_id,name,url,root_domain,next_check_at,created_at) VALUES(?,?,?,?,?,0,?)').bind(id,other,'Parallel',`https://${id}.example.net/`,'example.net',now()).run();

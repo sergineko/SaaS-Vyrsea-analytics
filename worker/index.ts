@@ -15,6 +15,9 @@ import {publicStatus} from './status-pages';
 import {withDatabase, type DatabaseBindings} from './database';
 import {publicAlerts,dispatchAlerts,consumeEmailEvent,type EmailEvent} from './alerts';
 import {customStatusRequest} from './status-domains';
+import {support,customerSupport,publicContact} from './support';
+import {assistedRecovery} from './assisted-recovery';
+import {receiveSupportEmail,dispatchSupportEmail} from './support-email';
 
 const app = new Hono<AppEnv>();
 app.use('/api/*',(c,next)=>bodyLimit({maxSize:c.req.path.startsWith('/api/status-pages')?98304:16384,onError:c=>c.json({error:'Solicitud demasiado grande.'},413)})(c,next));
@@ -33,7 +36,7 @@ app.use('/api/*', async (c, next) => {
 app.get('/api/health', async c => {
   const postgres=c.env.DATABASE_PROVIDER==='supabase';
   if(postgres)await c.env.DB.prepare('SELECT 1 AS ready').first();
-  return c.json({ok:true,service:'vyrsea',version:'0.5.1',database:postgres?'supabase':'d1'});
+  return c.json({ok:true,service:'vyrsea',version:'0.6.0',database:postgres?'supabase':'d1'});
 });
 app.get('/api/config', c => c.json({ turnstileSiteKey: c.env.TURNSTILE_SITE_KEY ?? '',
   registrationMode: 'approval', freeInactivityDays: 14,
@@ -44,6 +47,10 @@ app.route('/api/auth', auth);
 app.route('/api/auth', credentialSecurity);
 app.route('/api/account', account);
 app.route('/api/owner', owner);
+app.route('/api/support',support);
+app.route('/api/help',customerSupport);
+app.route('/api/public/contact',publicContact);
+app.route('/api/auth/assisted-recovery',assistedRecovery);
 app.route('/api/public/status',publicStatus);
 app.route('/api/public/alerts',publicAlerts);
 app.route('/api', api);
@@ -61,6 +68,7 @@ app.onError((error, c) => {
   if (/CREDENTIAL_CAPACITY/.test(detail)) return c.json({ error: 'Ya tienes cinco passkeys. Puedes recuperar el acceso con un código para sustituirlas.' }, 409);
   if (/STATUS_PAGE_CAPACITY/.test(detail)) return c.json({error:'La beta permite cinco páginas de estado por cuenta.'},409);
   if (/TEAM_CAPACITY/.test(detail)) return c.json({error:'El equipo y las invitaciones superan el límite del plan: Pro / Agencia admite 3 usuarios; Free y Starter, 1. El titular cuenta. Retira un acceso o cancela una invitación antes de continuar.'},409);
+  if (/SUPPORT_RECOVERY_CONFLICT/.test(detail)) return c.json({error:'La recuperación y el permiso global de soporte no pueden estar activos a la vez. Revisa la cuenta y retira primero la autorización anterior.'},409);
   if (/TEAM_PLAN_REQUIRED/.test(detail)) return c.json({error:'Retira los miembros y cancela las invitaciones antes de cambiar a un plan sin equipo.'},409);
   if (/GLOBAL_CAPACITY/.test(detail)) return c.json({ error: 'La beta ha alcanzado sus 10 monitores de clientes compartidos. Este límite técnico se aplica además de las cuotas de cada plan.' }, 409);
   if (/CUSTOM_PLAN_REQUIRED/.test(detail)) return c.json({ error: 'El plan Business necesita cuotas personalizadas configuradas por contrato.' }, 409);
@@ -86,9 +94,10 @@ export default {
     const daily = time.getUTCHours() === 3 && time.getUTCMinutes() === 17;
     // Reuse the minute trigger; unfinished bounded deletes continue every 15 min.
     const continuation=(time.getUTCMinutes()+13)%15===0;
-    await (controller.cron === '17 3 * * *' ? runRetentionJob(env,true) : Promise.all([schedule(env),dispatchAlerts(env), ...(daily||continuation ? [runRetentionJob(env,daily)] : [])]));
+    await (controller.cron === '17 3 * * *' ? runRetentionJob(env,true) : Promise.all([schedule(env),dispatchAlerts(env),dispatchSupportEmail(env), ...(daily||continuation ? [runRetentionJob(env,daily)] : [])]));
     }, ctx);
   },
+  async email(message:ForwardableEmailMessage,bindings:DatabaseBindings,ctx:ExecutionContext){return withDatabase(bindings,env=>receiveSupportEmail(message,env),ctx);},
   async queue(batch: MessageBatch<QueuePayload|EmailEvent>, bindings: DatabaseBindings, ctx: ExecutionContext) {
     if (bindings.DATABASE_MIGRATION_LOCK === '1') { batch.retryAll({delaySeconds:60}); return; }
     return withDatabase(bindings, async env => {

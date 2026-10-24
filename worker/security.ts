@@ -24,7 +24,8 @@ export const isLocal = (origin: string) => /^http:\/\/localhost(?::\d+)?$/.test(
 export async function sessionUser(c: Context<AppEnv>): Promise<User | null> {
   const token = readCookie(c, 'session');
   if (!token) return null;
-  const statement = c.env.DB.prepare(`SELECT u.id,u.username,u.created_at AS createdAt,u.account_status AS accountStatus,u.is_owner AS isOwner,
+  const statement = c.env.DB.prepare(`SELECT u.id,u.username,u.created_at AS createdAt,u.account_status AS accountStatus,u.is_owner AS isOwner,u.owner_apply_plan AS ownerApplyPlan,
+    EXISTS(SELECT 1 FROM platform_staff ps WHERE ps.user_id=u.id) AS isSupport,
     u.plan_id AS planId,u.last_active_at AS lastActiveAt,u.suspension_reason AS suspensionReason,u.review_requested_at AS reviewRequestedAt
     FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?`)
     .bind(await digest(token), nowSeconds());
@@ -33,7 +34,7 @@ export async function sessionUser(c: Context<AppEnv>): Promise<User | null> {
     await expireInactiveAccounts(c.env, nowSeconds(), user.id);
     user = await statement.first<User>();
   }
-  return user ? { ...user, isOwner: Boolean(user.isOwner) } : null;
+  return user ? { ...user, isOwner: Boolean(user.isOwner),isSupport:Boolean(user.isSupport),ownerApplyPlan:Boolean(user.ownerApplyPlan) } : null;
 }
 export async function newSession(c: Context<AppEnv>, userId: string, credentialId?: string) {
   const token = randomToken();

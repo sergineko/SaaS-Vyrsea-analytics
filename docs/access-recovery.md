@@ -22,7 +22,7 @@ El desafío caduca a los cinco minutos y se consume antes de verificar la respue
 - Turnstile exige la acción `recover`, hostname final y token válido. Solo localhost permite prescindir de él.
 - Las rutas usan HTTPS, origen exacto, JSON, cookies HttpOnly/SameSite Strict, respuestas no-store, límites de tamaño y frecuencia. No se devuelven hashes ni códigos en los resúmenes de seguridad.
 - No existe restablecimiento automático por correo ni un botón administrativo que cambie una passkey sin verificar la identidad. Falta configurar un canal de email verificado y sus notificaciones de seguridad.
-- Si se pierden todas las passkeys y todos los códigos, esta versión no puede restaurar automáticamente el acceso. Crear el kit debe hacerse antes de perder las credenciales.
+- Si se pierden todas las passkeys y todos los códigos, se puede solicitar [recuperación asistida en el CRM](support-crm.md). Requiere verificar la titularidad, autorización del propietario con passkey y un enlace de un solo uso. No se aplica a cuentas propietarias ni con permiso global de soporte. No existe recuperación automática por correo.
 - No se generan kits desde scripts de administración ni durante el despliegue. El titular confirma su passkey y guarda su kit personalmente en el dominio definitivo.
 - No se copian claves privadas: se registra una credencial nueva. La ceremonia real depende del dispositivo, navegador o llave del usuario.
 

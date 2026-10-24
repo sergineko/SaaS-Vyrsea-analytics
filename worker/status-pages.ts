@@ -54,7 +54,7 @@ publicStatus.get('/:id/:view?',async c=>{
   const cache=await caches.open('vyrsea-public-status-v1'),key=new Request(`${c.env.APP_ORIGIN}/api/public/status/${id}`);let payload:{page:StatusPage;services:unknown[];components:unknown[];announcements:unknown[];headline:string;generatedAt:number}|undefined;
   try{const cached=await cache.match(key);if(cached)payload=await cached.json();}catch{/* Read-only public cache is best effort. */}
   if(!payload){
-    const row=await c.env.DB.prepare(`SELECT s.* FROM status_pages s JOIN users u ON u.id=s.user_id WHERE s.id=? AND s.published=1 AND u.account_status='active' AND (u.is_owner=1 OR u.plan_id IN ('pro','business'))`).bind(id).first<Row>();
+    const row=await c.env.DB.prepare(`SELECT s.* FROM status_pages s JOIN users u ON u.id=s.user_id WHERE s.id=? AND s.published=1 AND u.account_status='active' AND ((u.is_owner=1 AND u.owner_apply_plan=0) OR u.plan_id IN ('pro','business'))`).bind(id).first<Row>();
     if(!row)throw new HTTPException(404,{message:'Esta página no está publicada.'});
     const plan=await accountPlan(c.env,row.user_id),now=nowSeconds(),from=Math.floor(now/3600)*3600-23*3600,to=from+86400,ids=JSON.parse(row.monitor_ids) as string[];
     const [monitors,stats]=await c.env.DB.batch<Record<string,string|number|null>>([

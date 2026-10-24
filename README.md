@@ -8,6 +8,8 @@ Repositorio: [sergineko/SaaS-Vyrsea-analytics](https://github.com/sergineko/SaaS
 
 ## Qué funciona
 
+- [CRM de soporte](docs/support-crm.md): tickets de clientes, formulario público, recepción de correo, responsables, prioridades, notas internas y recuperación asistida con comprobación de titularidad y autorización mediante passkey. Permiso global de soporte separado del equipo del cliente. El envío de respuestas por email sigue pendiente de activar Cloudflare Email Service.
+
 - Beta con aprobación manual de nuevas cuentas y reactivaciones desde un panel exclusivo del propietario. Free se suspende tras más de 14 días sin uso real (una hora de margen por agrupación de actividad); el refresco automático, sondas y agentes no mantienen activa la cuenta. [Acceso y política de inactividad](docs/account-access.md).
 
 - Registro y acceso con passkeys verificadas en el servidor. Sesiones de siete días, tokens aleatorios almacenados como SHA-256, cookies HttpOnly y SameSite Strict; en HTTPS usan Secure y prefijo `__Host-`.

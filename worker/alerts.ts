@@ -124,7 +124,7 @@ export async function dispatchAlerts(env:Env,now=nowSeconds()){
   await env.DB.prepare(`INSERT OR IGNORE INTO alert_deliveries(id,destination_id,event_id,payload,next_attempt_at,created_at,updated_at)
     SELECT a.id || ':' || n.id,a.id,n.id,n.message,?,?,? FROM notifications n JOIN alert_destinations a ON a.user_id=n.user_id JOIN users u ON u.id=n.user_id
     WHERE n.created_at>=? AND n.created_at>=a.created_at AND a.enabled=1 AND a.verified_at IS NOT NULL AND u.account_status='active'
-    AND ((a.kind='email' AND u.plan_id IN ('starter','pro','business')) OR (a.kind='webhook' AND u.plan_id IN ('pro','business')) OR u.is_owner=1)
+    AND ((a.kind='email' AND u.plan_id IN ('starter','pro','business')) OR (a.kind='webhook' AND u.plan_id IN ('pro','business')) OR (u.is_owner=1 AND u.owner_apply_plan=0))
     AND NOT EXISTS(SELECT 1 FROM alert_deliveries d WHERE d.destination_id=a.id AND d.event_id=n.id) ORDER BY n.created_at LIMIT 100`).bind(now,now,now,now-86400).run();
   // The email API has no provider idempotency key. Never resend an expired
   // in-flight email blindly: an accepted send may have lost its local receipt.
@@ -135,7 +135,7 @@ export async function dispatchAlerts(env:Env,now=nowSeconds()){
     const claimed=await env.DB.prepare(`UPDATE alert_deliveries SET state='sending',lease_token=?,lease_until=?,attempts=attempts+1 WHERE id=? AND state IN ('pending','sending') AND lease_until<=? RETURNING attempts`).bind(lease,now+60,row.id,now).first<{attempts:number}>();
     if(!claimed)continue;
     const dest=await env.DB.prepare(`SELECT a.* FROM alert_destinations a JOIN users u ON u.id=a.user_id WHERE a.id=? AND a.enabled=1 AND u.account_status='active'
-      AND (u.is_owner=1 OR (a.kind='email' AND u.plan_id IN ('starter','pro','business')) OR (a.kind='webhook' AND u.plan_id IN ('pro','business')))` ).bind(row.destination_id).first<Destination>();
+      AND ((u.is_owner=1 AND u.owner_apply_plan=0) OR (a.kind='email' AND u.plan_id IN ('starter','pro','business')) OR (a.kind='webhook' AND u.plan_id IN ('pro','business')))` ).bind(row.destination_id).first<Destination>();
     let state='pending',status:number|null=null,error:string|null=null,providerId:string|null=null;
     try{
       if(!dest){state='cancelled';throw new Error('Destino o plan sin acceso.');}
