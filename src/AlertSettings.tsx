@@ -7,10 +7,10 @@ import {useVisibleRefresh} from './useVisibleRefresh';
 type Destination={id:string;kind:'email'|'webhook';target:string;verifiedAt:number|null;enabled:number};
 type Data={destinations:Destination[];deliveries:{id:string;destinationId:string;state:string;attempts:number;lastError:string|null;updatedAt:number}[];email:{ready:boolean;entitled:boolean};webhook:{ready:boolean;entitled:boolean}};
 const states:Record<string,string>={pending:'Pendiente',sending:'Enviando',accepted:'Aceptado por el proveedor',delivered:'Entrega confirmada',failed:'Fallido',cancelled:'Cancelado',uncertain:'Revisar envío incierto'};
-export function AlertSettings({demo=false}:{demo?:boolean}){
+export function AlertSettings({demo=false,refreshSeconds=60}:{demo?:boolean;refreshSeconds?:number}){
  const [data,setData]=useState<Data|null>(null),[tab,setTab]=useState<'email'|'webhook'|'history'>('email'),[target,setTarget]=useState(''),[adding,setAdding]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[secret,setSecret]=useState(''),[remove,setRemove]=useState<Destination|null>(null),[deliveryFilter,setDeliveryFilter]=useState('all');
  async function load(){if(!demo)setData(await request<Data>('/alerts'));}
- useVisibleRefresh(load,!demo&&!busy&&!adding&&!secret&&!remove);
+ useVisibleRefresh(load,!demo&&!busy&&!adding&&!secret&&!remove,Math.max(60,refreshSeconds)*1000);
  useEffect(()=>{if(demo){setData({destinations:[],deliveries:[],email:{ready:false,entitled:true},webhook:{ready:false,entitled:true}});return;}load().catch(e=>setMessage(e.message));},[demo]);
  async function act(action:()=>Promise<unknown>){setBusy(true);setMessage('');try{await action();await load();}catch(e){setMessage((e as Error).message);}finally{setBusy(false);}}
  const kind=tab==='history'?'email':tab,channel=data?.[kind],destinations=data?.destinations.filter(d=>d.kind===kind)??[];
